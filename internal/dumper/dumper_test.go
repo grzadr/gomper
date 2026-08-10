@@ -50,26 +50,52 @@ func TestEstimateTokens(t *testing.T) {
 
 func TestFormatLineNumberedContent(t *testing.T) {
 	t.Run("Empty content", func(t *testing.T) {
-		if got := dumper.FormatLineNumberedContent(nil); got != "" {
+		var buf bytes.Buffer
+		err := dumper.FormatLineNumberedContent(bytes.NewReader(nil), &buf, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got := buf.String(); got != "" {
 			t.Errorf("expected empty string, got %q", got)
 		}
 	})
 
 	t.Run("Single line with special characters", func(t *testing.T) {
 		content := []byte(`fmt.Println("<hello & world>")`)
-		formatted := dumper.FormatLineNumberedContent(content)
+		var buf bytes.Buffer
+		err := dumper.FormatLineNumberedContent(bytes.NewReader(content), &buf, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		expected := "1 | fmt.Println(&#34;&lt;hello &amp; world&gt;&#34;)\n"
-		if formatted != expected {
-			t.Errorf("expected %q, got %q", expected, formatted)
+		if got := buf.String(); got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
 		}
 	})
 
 	t.Run("Multiple lines with newline at end", func(t *testing.T) {
 		content := []byte("line1\nline2\n")
-		formatted := dumper.FormatLineNumberedContent(content)
+		var buf bytes.Buffer
+		err := dumper.FormatLineNumberedContent(bytes.NewReader(content), &buf, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		expected := "1 | line1\n2 | line2\n"
-		if formatted != expected {
-			t.Errorf("expected %q, got %q", expected, formatted)
+		if got := buf.String(); got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
+		}
+	})
+
+	t.Run("Without XML escaping", func(t *testing.T) {
+		content := []byte(`fmt.Println("<hello & world>")`)
+		var buf bytes.Buffer
+		err := dumper.FormatLineNumberedContent(bytes.NewReader(content), &buf, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		expected := "1 | fmt.Println(\"<hello & world>\")\n"
+		if got := buf.String(); got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
 		}
 	})
 }
