@@ -1,0 +1,344 @@
+package dumper
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"html"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/grzadr/gomper/internal/scanner"
+)
+
+// XMLDumper generates XML context representations of codebases.
+type XMLDumper struct {
+	logger *slog.Logger
+}
+
+// NewXMLDumper creates a new dumper instance.
+func NewXMLDumper(logger *slog.Logger) *XMLDumper {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &XMLDumper{logger: logger}
+}
+
+// FileData holds computed statistics and formatted content for a single file.
+type FileData struct {
+	RelPath string
+	Lang    string
+	Tokens  int
+	Content string
+}
+
+// EstimateTokens calculates an approximate token count for file content (~4 chars per token).
+func EstimateTokens(content []byte) int {
+	if len(content) == 0 {
+		return 0
+	}
+	tokens := (len(content) + 3) / 4
+	if tokens < 1 {
+		return 1
+	}
+	return tokens
+}
+
+// FormatLineNumberedContent prepends 1-indexed line numbers ("1 | ...") and XML-escapes text.
+func FormatLineNumberedContent(content []byte) string {
+	if len(content) == 0 {
+		return ""
+	}
+
+	str := string(content)
+	lines := strings.Split(str, "\n")
+	// If the file ends with a newline, strings.Split creates a trailing empty string element.
+	// Trim the final empty element if content ends with newline to avoid an extra line number.
+	if len(lines) > 1 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+
+	var sb strings.Builder
+	for i, line := range lines {
+		escapedLine := html.EscapeString(line)
+		fmt.Fprintf(&sb, "%d | %s\n", i+1, escapedLine)
+	}
+	return sb.String()
+}
+
+// TreeNode represents a node in the directory structure hierarchy.
+type TreeNode struct {
+	Name     string
+	IsDir    bool
+	Children map[string]*TreeNode
+}
+
+// BuildDirectoryTree generates an indented string representation of scanned entries.
+func BuildDirectoryTree(entries []scanner.Entry) string {
+	root := &TreeNode{Children: make(map[string]*TreeNode)}
+
+	for _, entry := range entries {
+		rel := filepath.ToSlash(entry.RelPath)
+		if rel == "." || rel == "" {
+			continue
+		}
+
+		parts := strings.Split(rel, "/")
+		curr := root
+		for i, part := range parts {
+			if part == "" {
+				continue
+			}
+			isLast := (i == len(parts)-1)
+			isDir := !isLast || entry.IsDir
+
+			child, exists := curr.Children[part]
+			if !exists {
+				child = &TreeNode{
+					Name:     part,
+					IsDir:    isDir,
+					Children: make(map[string]*TreeNode),
+				}
+				curr.Children[part] = child
+			} else if isDir {
+				child.IsDir = true
+			}
+			curr = child
+		}
+	}
+
+	var sb strings.Builder
+	renderTree(root, 0, &sb)
+	return sb.String()
+}
+
+func renderTree(node *TreeNode, depth int, sb *strings.Builder) {
+	names := make([]string, 0, len(node.Children))
+	for name := range node.Children {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	indent := strings.Repeat("  ", depth)
+	for _, name := range names {
+		child := node.Children[name]
+		if child.IsDir {
+			fmt.Fprintf(sb, "%s%s/\n", indent, child.Name)
+			renderTree(child, depth+1, sb)
+		} else {
+			fmt.Fprintf(sb, "%s%s\n", indent, child.Name)
+		}
+	}
+}
+
+// GenerateXML writes the XML document for the provided scanned entries to targetWriter.
+func (d *XMLDumper) GenerateXML(ctx context.Context, entries []scanner.Entry, instructions string, targetWriter io.Writer) error {
+	var filesData []FileData
+	totalTokens := 0
+
+	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		if entry.IsDir {
+			continue
+		}
+
+		lang, known := scanner.LookupLanguage(entry.Path)
+		if !known {
+			ext := filepath.Ext(entry.Path)
+			d.logger.InfoContext(ctx, "unsupported file extension encountered",
+				slog.String("path", entry.Path),
+				slog.String("ext", ext),
+			)
+		}
+
+		rawContent, err := os.ReadFile(entry.Path)
+		if err != nil {
+			d.logger.WarnContext(ctx, "unable to read file content for dump",
+				slog.String("path", entry.Path),
+				slog.Any("error", err),
+			)
+			continue
+		}
+
+		if !utf8.Valid(rawContent) {
+			d.logger.DebugContext(ctx, "skipping non-UTF8 binary file", slog.String("path", entry.Path))
+			continue
+		}
+
+		tokens := EstimateTokens(rawContent)
+		totalTokens += tokens
+		formattedContent := FormatLineNumberedContent(rawContent)
+
+		relPath := filepath.ToSlash(entry.RelPath)
+		if relPath == "" || relPath == "." {
+			relPath = filepath.Base(entry.Path)
+		}
+
+		filesData = append(filesData, FileData{
+			RelPath: relPath,
+			Lang:    lang,
+			Tokens:  tokens,
+			Content: formattedContent,
+		})
+	}
+
+	dirTree := BuildDirectoryTree(entries)
+
+	w := bufio.NewWriter(targetWriter)
+	defer func() { _ = w.Flush() }()
+
+	_, _ = fmt.Fprintln(w, `<codebase_context version="1.0">`)
+	_, _ = fmt.Fprintln(w, `<header>`)
+	_, _ = fmt.Fprintln(w, `  <summary>`)
+	_, _ = fmt.Fprintln(w, `    <generation_info>Generated by Automated Repository Packer</generation_info>`)
+	_, _ = fmt.Fprintln(w, `    <purpose>Merged representation of the codebase for automated code review, refactoring, or feature implementation.</purpose>`)
+	_, _ = fmt.Fprintf(w, "    <total_files>%d</total_files>\n", len(filesData))
+	_, _ = fmt.Fprintf(w, "    <total_tokens>%d</total_tokens>\n", totalTokens)
+	_, _ = fmt.Fprintln(w, `  </summary>`)
+	_, _ = fmt.Fprintln(w, `  <usage_guidelines>`)
+	_, _ = fmt.Fprintln(w, `    - Treat this document as a read-only repository snapshot.`)
+	_, _ = fmt.Fprintln(w, `    - Reference specific files using their full relative paths as defined in the path attribute.`)
+	_, _ = fmt.Fprintln(w, `    - When generating code changes, specify line numbers or provide complete functional blocks.`)
+	_, _ = fmt.Fprintln(w, `  </usage_guidelines>`)
+	_, _ = fmt.Fprintln(w, `  <user_instructions>`)
+	if instructions != "" {
+		_, _ = fmt.Fprintf(w, "    %s\n", html.EscapeString(instructions))
+	}
+	_, _ = fmt.Fprintln(w, `  </user_instructions>`)
+	_, _ = fmt.Fprintln(w, `</header>`)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, `<directory_structure>`)
+	_, _ = w.WriteString(dirTree)
+	_, _ = fmt.Fprintln(w, `</directory_structure>`)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, `<files>`)
+
+	for _, fd := range filesData {
+		_, _ = fmt.Fprintf(w, "  <file path=%q language=%q tokens=\"%d\">\n", fd.RelPath, fd.Lang, fd.Tokens)
+		_, _ = w.WriteString(fd.Content)
+		_, _ = fmt.Fprintln(w, `  </file>`)
+	}
+
+	_, _ = fmt.Fprintln(w, `</files>`)
+	_, _ = fmt.Fprintln(w, `</codebase_context>`)
+
+	return w.Flush()
+}
+
+// GenerateMarkdown writes a Markdown document representation for scanned entries to targetWriter.
+func (d *XMLDumper) GenerateMarkdown(ctx context.Context, entries []scanner.Entry, instructions string, targetWriter io.Writer) error {
+	var filesData []FileData
+	totalTokens := 0
+
+	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		if entry.IsDir {
+			continue
+		}
+
+		lang, known := scanner.LookupLanguage(entry.Path)
+		if !known {
+			ext := filepath.Ext(entry.Path)
+			d.logger.InfoContext(ctx, "unsupported file extension encountered",
+				slog.String("path", entry.Path),
+				slog.String("ext", ext),
+			)
+		}
+
+		rawContent, err := os.ReadFile(entry.Path)
+		if err != nil {
+			d.logger.WarnContext(ctx, "unable to read file content for dump",
+				slog.String("path", entry.Path),
+				slog.Any("error", err),
+			)
+			continue
+		}
+
+		if !utf8.Valid(rawContent) {
+			d.logger.DebugContext(ctx, "skipping non-UTF8 binary file", slog.String("path", entry.Path))
+			continue
+		}
+
+		tokens := EstimateTokens(rawContent)
+		totalTokens += tokens
+
+		lines := strings.Split(string(rawContent), "\n")
+		if len(lines) > 1 && lines[len(lines)-1] == "" {
+			lines = lines[:len(lines)-1]
+		}
+		var sb strings.Builder
+		for i, line := range lines {
+			fmt.Fprintf(&sb, "%d | %s\n", i+1, line)
+		}
+
+		relPath := filepath.ToSlash(entry.RelPath)
+		if relPath == "" || relPath == "." {
+			relPath = filepath.Base(entry.Path)
+		}
+
+		filesData = append(filesData, FileData{
+			RelPath: relPath,
+			Lang:    lang,
+			Tokens:  tokens,
+			Content: sb.String(),
+		})
+	}
+
+	dirTree := BuildDirectoryTree(entries)
+
+	w := bufio.NewWriter(targetWriter)
+	defer func() { _ = w.Flush() }()
+
+	_, _ = fmt.Fprintln(w, `# Codebase Context (v1.0)`)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, `## Header`)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, `### Summary`)
+	_, _ = fmt.Fprintln(w, `- **Generation Info**: Generated by Automated Repository Packer`)
+	_, _ = fmt.Fprintln(w, `- **Purpose**: Merged representation of the codebase for automated code review, refactoring, or feature implementation.`)
+	_, _ = fmt.Fprintf(w, "- **Total Files**: %d\n", len(filesData))
+	_, _ = fmt.Fprintf(w, "- **Total Tokens**: %d\n", totalTokens)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, `### Usage Guidelines`)
+	_, _ = fmt.Fprintln(w, `- Treat this document as a read-only repository snapshot.`)
+	_, _ = fmt.Fprintln(w, `- Reference specific files using their full relative paths as defined in the path attribute.`)
+	_, _ = fmt.Fprintln(w, `- When generating code changes, specify line numbers or provide complete functional blocks.`)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, `### User Instructions`)
+	if instructions != "" {
+		_, _ = fmt.Fprintln(w, instructions)
+	} else {
+		_, _ = fmt.Fprintln(w, `None`)
+	}
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, `## Directory Structure`)
+	_, _ = fmt.Fprintln(w, "```")
+	_, _ = w.WriteString(dirTree)
+	_, _ = fmt.Fprintln(w, "```")
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, `## Files`)
+	_, _ = fmt.Fprintln(w)
+
+	for _, fd := range filesData {
+		_, _ = fmt.Fprintf(w, "### File: `%s`\n", fd.RelPath)
+		_, _ = fmt.Fprintf(w, "- **Language**: %s\n", fd.Lang)
+		_, _ = fmt.Fprintf(w, "- **Tokens**: %d\n\n", fd.Tokens)
+		_, _ = fmt.Fprintf(w, "```%s\n", fd.Lang)
+		_, _ = w.WriteString(fd.Content)
+		_, _ = fmt.Fprintln(w, "```")
+		_, _ = fmt.Fprintln(w)
+	}
+
+	return w.Flush()
+}

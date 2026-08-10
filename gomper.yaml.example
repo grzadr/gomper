@@ -1,0 +1,27 @@
+# gomper configuration file example
+
+# Target directory or file paths to process
+paths:
+  - .
+
+# Embedded ignore profiles to load (options: generic, go, node, python, java, cpp, rust)
+profiles:
+  - generic
+  - go
+
+# Custom regex ignore patterns
+ignore:
+  - "^tmp/"
+
+# Ignore hidden files and directories starting with '.'
+ignore_dotfiles: false
+
+# User instructions to embed into export headers
+instructions: ""
+
+# Default dump export format: markdown | xml
+format: markdown
+
+# Default log level: debug | info | warn | error
+log_level: info
+

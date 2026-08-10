@@ -1,0 +1,38 @@
+# Environment files
+.env
+.env.*
+.env.local
+.env.development
+.env.test
+.env.production
+*.env
+
+# OS metadata files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+
+# Version Control
+.git/
+.svn/
+.hg/
+
+# Logs and Temp
+*.log
+logs/
+temp/
+tmp/
