@@ -93,6 +93,11 @@ root_test.go
   ./bin/gomper list . --profile generic --profile go
   ```
 
+- **Ignore Directory (Gitignore Convention)** (`-D`, `--ignore-dir`): Filter out directories matching gitignore conventions (e.g. `bin`, `coverage`, `bin/`, `/build`).
+  ```bash
+  ./bin/gomper list . --ignore-dir bin --ignore-dir coverage
+  ```
+
 - **Regex Pattern Ignore** (`-i`, `--ignore`): Filter out files or directories matching custom regular expressions.
   ```bash
   ./bin/gomper list . --ignore "_test\.go$" --ignore "node_modules"
@@ -162,7 +167,7 @@ Export target directories into a single file or standard output:
 
 ## YAML Configuration File
 
-`gomper` automatically reads `./gomper.yaml` or `$HOME/gomper.yaml` (or a custom path via `--config <file>`). You can specify default target paths, profiles, format, instructions, and custom ignore regexes:
+`gomper` automatically reads `./gomper.yaml` or `$HOME/gomper.yaml` (or a custom path via `--config <file>`). You can specify default target paths, profiles, format, instructions, custom ignore regexes, and directory ignore rules:
 
 ```yaml
 # gomper.yaml
@@ -176,6 +181,10 @@ profiles:
 
 ignore:
   - "^tmp/"
+
+ignore_dir:
+  - bin
+  - coverage
 
 ignore_dotfiles: true
 
@@ -199,11 +208,13 @@ When `paths` are specified in `gomper.yaml`, running `./bin/gomper list` or `./b
 | Target Paths | - | - | `paths` | Positional CLI args |
 | Ignore Profiles | `--profile`, `-p` | `GOMPER_PROFILE` | `profiles` / `profile` | `[]` |
 | Custom Ignore Regex | `--ignore`, `-i` | `GOMPER_IGNORE` | `ignore` | `[]` |
+| Ignore Directory | `--ignore-dir`, `-D` | `GOMPER_IGNORE_DIR` | `ignore_dir` / `ignore_dirs` | `[]` |
 | Ignore Dotfiles | `--ignore-dotfiles`, `-d` | `GOMPER_IGNORE_DOTFILES` | `ignore_dotfiles` | `false` |
 | User Instructions | `--instructions`, `-u` | `GOMPER_INSTRUCTIONS` | `instructions` | `""` |
 | Log Level | `--log-level` | `GOMPER_LOG_LEVEL` | `log_level` | `info` |
 | Output Format | `--format`, `-f` | `GOMPER_FORMAT` | `format` | `markdown` |
 | Output Path | `--output`, `-o` | `GOMPER_OUTPUT` | `output` | `stdout` |
+
 
 ---
 

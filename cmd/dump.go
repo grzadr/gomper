@@ -9,6 +9,7 @@ import (
 // NewDumpCommand creates and initializes the dump subcommand.
 func NewDumpCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 	var localIgnore []string
+	var localIgnoreDir []string
 	var localProfiles []string
 
 	cmd := &cobra.Command{
@@ -23,6 +24,9 @@ func NewDumpCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 			allIgnore := append([]string{}, cfg.Ignore...)
 			allIgnore = append(allIgnore, localIgnore...)
 
+			allIgnoreDir := append([]string{}, cfg.GetEffectiveIgnoreDirs()...)
+			allIgnoreDir = append(allIgnoreDir, localIgnoreDir...)
+
 			allProfiles := append([]string{}, cfg.GetEffectiveProfiles()...)
 			allProfiles = append(allProfiles, localProfiles...)
 
@@ -30,6 +34,7 @@ func NewDumpCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 				Format:         cfg.Format,
 				OutputPath:     cfg.Output,
 				IgnorePatterns: allIgnore,
+				IgnoreDirs:     allIgnoreDir,
 				IgnoreDotfiles: cfg.IgnoreDotfiles,
 				Profiles:       allProfiles,
 				Instructions:   cfg.Instructions,
@@ -42,7 +47,9 @@ func NewDumpCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 	cmd.Flags().StringVarP(&cfg.Output, "output", "o", "", "output file path (defaults to stdout)")
 	cmd.Flags().StringVarP(&cfg.Instructions, "instructions", "u", "", "user instructions to include in dump header")
 	cmd.Flags().StringSliceVarP(&localIgnore, "ignore", "i", nil, "regex patterns to ignore matching files or directories")
+	cmd.Flags().StringSliceVarP(&localIgnoreDir, "ignore-dir", "D", nil, "directory patterns to ignore following gitignore convention (e.g. 'bin', 'coverage')")
 	cmd.Flags().StringSliceVarP(&localProfiles, "profile", "p", nil, "ignore profiles (e.g. 'go', 'node', 'python')")
 
 	return cmd
+
 }

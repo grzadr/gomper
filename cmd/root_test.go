@@ -242,7 +242,81 @@ func TestCLI_ListCommand(t *testing.T) {
 			t.Errorf("expected notes.txt to be included, got output: %q", output)
 		}
 	})
+
+	t.Run("Executes with --ignore-dir / -D flag filtering out target directories", func(t *testing.T) {
+		tempDir := t.TempDir()
+		binDir := filepath.Join(tempDir, "bin")
+		covDir := filepath.Join(tempDir, "coverage")
+		srcDir := filepath.Join(tempDir, "src")
+		_ = os.Mkdir(binDir, 0755)
+		_ = os.Mkdir(covDir, 0755)
+		_ = os.Mkdir(srcDir, 0755)
+
+		_ = os.WriteFile(filepath.Join(binDir, "app"), []byte("bin"), 0755)
+		_ = os.WriteFile(filepath.Join(covDir, "cov.out"), []byte("cov"), 0644)
+		_ = os.WriteFile(filepath.Join(srcDir, "main.go"), []byte("package main"), 0644)
+
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"list", tempDir, "-D", "bin", "--ignore-dir", "coverage"})
+		err := rootCmd.Execute()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := outBuf.String()
+		if strings.Contains(output, "bin") || strings.Contains(output, "coverage") {
+			t.Errorf("expected bin and coverage directories to be ignored, got output: %q", output)
+		}
+		if !strings.Contains(output, "main.go") {
+			t.Errorf("expected main.go to be included, got output: %q", output)
+		}
+	})
+
+	t.Run("Loads ignore_dir from custom YAML configuration file", func(t *testing.T) {
+		tempDir := t.TempDir()
+		targetDir := filepath.Join(tempDir, "target")
+		_ = os.Mkdir(targetDir, 0755)
+
+		binDir := filepath.Join(targetDir, "bin")
+		_ = os.Mkdir(binDir, 0755)
+		_ = os.WriteFile(filepath.Join(binDir, "app"), []byte("bin"), 0755)
+
+		goFile := filepath.Join(targetDir, "main.go")
+		_ = os.WriteFile(goFile, []byte("package main"), 0644)
+
+		configContent := "paths:\n  - " + targetDir + "\nignore_dir:\n  - bin\n"
+		configFile := filepath.Join(tempDir, "custom-config.yaml")
+		if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
+			t.Fatalf("failed to write config file: %v", err)
+		}
+
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"list", "--config", configFile})
+		err := rootCmd.Execute()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := outBuf.String()
+		if strings.Contains(output, "bin") {
+			t.Errorf("expected bin directory to be filtered by ignore_dir loaded from YAML, got: %q", output)
+		}
+		if !strings.Contains(output, "main.go") {
+			t.Errorf("expected main.go to be listed, got: %q", output)
+		}
+	})
 }
+
 
 func TestCLI_ProfilesCommand(t *testing.T) {
 	rootCmd := cmd.NewRootCommand(nil)

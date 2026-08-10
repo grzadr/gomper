@@ -42,13 +42,16 @@ func NewRootCommand(appInst *setup.App) *cobra.Command {
 	rootCmd.PersistentFlags().StringVar(&cfg.ConfigFile, "config", "", "path to custom configuration file")
 	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "info", "logging level (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringSliceVarP(&cfg.Ignore, "ignore", "i", nil, "regex patterns to ignore files or directories")
+	rootCmd.PersistentFlags().StringSliceVarP(&cfg.IgnoreDir, "ignore-dir", "D", nil, "directory patterns to ignore following gitignore convention (e.g. 'bin', 'coverage')")
 	rootCmd.PersistentFlags().BoolVarP(&cfg.IgnoreDotfiles, "ignore-dotfiles", "d", false, "ignore files and directories starting with '.'")
 	rootCmd.PersistentFlags().StringSliceVarP(&cfg.Profile, "profile", "p", nil, "ignore profiles (e.g., 'go', 'node', 'python')")
 
 	_ = v.BindPFlag("log_level", rootCmd.PersistentFlags().Lookup("log-level"))
 	_ = v.BindPFlag("ignore", rootCmd.PersistentFlags().Lookup("ignore"))
+	_ = v.BindPFlag("ignore_dir", rootCmd.PersistentFlags().Lookup("ignore-dir"))
 	_ = v.BindPFlag("ignore_dotfiles", rootCmd.PersistentFlags().Lookup("ignore-dotfiles"))
 	_ = v.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
+
 
 	rootCmd.AddCommand(NewListCommand(cfg, service))
 	rootCmd.AddCommand(NewDumpCommand(cfg, service))

@@ -153,6 +153,33 @@ func TestService_List(t *testing.T) {
 		}
 	})
 
+	t.Run("List with IgnoreDirs option", func(t *testing.T) {
+		tempDir := t.TempDir()
+		binDir := filepath.Join(tempDir, "bin")
+		_ = os.Mkdir(binDir, 0755)
+		_ = os.WriteFile(filepath.Join(binDir, "app"), []byte("exec"), 0755)
+
+		srcDir := filepath.Join(tempDir, "src")
+		_ = os.Mkdir(srcDir, 0755)
+		_ = os.WriteFile(filepath.Join(srcDir, "main.go"), []byte("package main"), 0644)
+
+		outBuf := new(bytes.Buffer)
+		opts := app.ListOptions{IgnoreDirs: []string{"bin"}}
+
+		err := svc.List(context.Background(), outBuf, []string{tempDir}, opts)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := outBuf.String()
+		if strings.Contains(output, "bin") || strings.Contains(output, "app") {
+			t.Errorf("expected bin directory and contents to be ignored, got output: %q", output)
+		}
+		if !strings.Contains(output, "main.go") {
+			t.Errorf("expected main.go to be included, got output: %q", output)
+		}
+	})
+
 	t.Run("Handles scan error for non-existent path", func(t *testing.T) {
 		outBuf := new(bytes.Buffer)
 		opts := app.ListOptions{}
@@ -168,6 +195,7 @@ func TestService_List(t *testing.T) {
 		}
 	})
 }
+
 
 func TestService_Dump(t *testing.T) {
 	appInst := setup.NewApp(slog.LevelDebug)
@@ -264,6 +292,33 @@ func TestService_Dump(t *testing.T) {
 		}
 	})
 
+	t.Run("Dump with IgnoreDirs option", func(t *testing.T) {
+		tempDir := t.TempDir()
+		covDir := filepath.Join(tempDir, "coverage")
+		_ = os.Mkdir(covDir, 0755)
+		_ = os.WriteFile(filepath.Join(covDir, "coverage.out"), []byte("data"), 0644)
+		_ = os.WriteFile(filepath.Join(tempDir, "main.go"), []byte("package main"), 0644)
+
+		outBuf := new(bytes.Buffer)
+		opts := app.DumpOptions{
+			Format:     app.FormatMarkdown,
+			IgnoreDirs: []string{"coverage"},
+		}
+
+		err := svc.Dump(context.Background(), outBuf, []string{tempDir}, opts)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := outBuf.String()
+		if strings.Contains(output, "coverage.out") {
+			t.Errorf("expected coverage directory and contents to be excluded from dump, got: %q", output)
+		}
+		if !strings.Contains(output, "main.go") {
+			t.Errorf("expected main.go to be present in dump, got: %q", output)
+		}
+	})
+
 	t.Run("Handles scan error for non-existent path in dump", func(t *testing.T) {
 		outBuf := new(bytes.Buffer)
 		opts := app.DumpOptions{
@@ -281,6 +336,7 @@ func TestService_Dump(t *testing.T) {
 		}
 	})
 }
+
 
 func TestOutputFormat_String(t *testing.T) {
 	if app.FormatMarkdown.String() != "markdown" {

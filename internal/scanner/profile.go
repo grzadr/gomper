@@ -63,7 +63,10 @@ func GitignoreToRegex(line string) string {
 		return ""
 	}
 
-	// Strip trailing slashes for directory matching
+	isAnchored := strings.HasPrefix(line, "/")
+
+	// Strip leading and trailing slashes for path matching
+	line = strings.TrimPrefix(line, "/")
 	line = strings.TrimSuffix(line, "/")
 
 	var sb strings.Builder
@@ -87,6 +90,9 @@ func GitignoreToRegex(line string) string {
 		return ""
 	}
 
-	// Match pattern against file basename or relative path boundaries
+	if isAnchored {
+		return "^" + pattern + "(/|$)"
+	}
 	return "(^|/)" + pattern + "(/|$)"
 }
+

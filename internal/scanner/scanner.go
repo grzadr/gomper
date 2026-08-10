@@ -23,12 +23,18 @@ type Entry struct {
 // Filter holds compiled regular expression patterns and options used to exclude files and directories during scanning.
 type Filter struct {
 	regexes        []*regexp.Regexp
+	dirRegexes     []*regexp.Regexp
 	ignoreDotfiles bool
 }
 
-// NewFilter parses and compiles regex pattern strings into a Filter with optional dotfile exclusion.
-func NewFilter(patterns []string, ignoreDotfiles bool) (*Filter, error) {
-	if len(patterns) == 0 && !ignoreDotfiles {
+// NewFilter parses and compiles regex pattern strings and directory ignore patterns into a Filter with optional dotfile exclusion.
+func NewFilter(patterns []string, ignoreDotfiles bool, dirPatterns ...[]string) (*Filter, error) {
+	var userDirPatterns []string
+	if len(dirPatterns) > 0 {
+		userDirPatterns = dirPatterns[0]
+	}
+
+	if len(patterns) == 0 && len(userDirPatterns) == 0 && !ignoreDotfiles {
 		return nil, nil
 	}
 
@@ -44,33 +50,57 @@ func NewFilter(patterns []string, ignoreDotfiles bool) (*Filter, error) {
 		regexes = append(regexes, re)
 	}
 
-	if len(regexes) == 0 && !ignoreDotfiles {
+	var dirRegexes []*regexp.Regexp
+	for _, dp := range userDirPatterns {
+		if dp == "" {
+			continue
+		}
+		pattern := GitignoreToRegex(dp)
+		if pattern == "" {
+			continue
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ignore directory pattern %q: %w", dp, err)
+		}
+		dirRegexes = append(dirRegexes, re)
+	}
+
+	if len(regexes) == 0 && len(dirRegexes) == 0 && !ignoreDotfiles {
 		return nil, nil
 	}
 	return &Filter{
 		regexes:        regexes,
+		dirRegexes:     dirRegexes,
 		ignoreDotfiles: ignoreDotfiles,
 	}, nil
 }
 
-// ShouldIgnore checks if the given entry name or relative path matches any ignore regex or dotfile rule.
+// ShouldIgnore checks if the given entry name or relative path matches any ignore regex, ignore directory rule, or dotfile rule.
 func (f *Filter) ShouldIgnore(name string, relPath string) bool {
 	if f == nil {
 		return false
 	}
+	slashRel := filepath.ToSlash(relPath)
 	if f.ignoreDotfiles {
-		baseName := filepath.Base(relPath)
+		baseName := filepath.Base(slashRel)
 		if strings.HasPrefix(name, ".") || strings.HasPrefix(baseName, ".") {
 			return true
 		}
 	}
+	for _, re := range f.dirRegexes {
+		if re.MatchString(name) || re.MatchString(slashRel) {
+			return true
+		}
+	}
 	for _, re := range f.regexes {
-		if re.MatchString(name) || re.MatchString(relPath) {
+		if re.MatchString(name) || re.MatchString(slashRel) {
 			return true
 		}
 	}
 	return false
 }
+
 
 // WalkPaths returns an iter.Seq2[Entry, error] iterator (Go range-over-function)
 // that traverses all files and directories specified by paths, filtering out entries

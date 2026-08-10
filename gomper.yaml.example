@@ -13,8 +13,14 @@ profiles:
 ignore:
   - "^tmp/"
 
+# Directory ignore patterns following gitignore conventions (e.g., bin, coverage)
+ignore_dir:
+  - bin
+  - coverage
+
 # Ignore hidden files and directories starting with '.'
 ignore_dotfiles: false
+
 
 # User instructions to embed into export headers
 instructions: ""

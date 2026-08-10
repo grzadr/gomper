@@ -13,6 +13,7 @@ func NewListCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 	var filesOnly bool
 	var longFormat bool
 	var localIgnore []string
+	var localIgnoreDir []string
 	var localProfiles []string
 
 	cmd := &cobra.Command{
@@ -27,6 +28,9 @@ func NewListCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 			allIgnore := append([]string{}, cfg.Ignore...)
 			allIgnore = append(allIgnore, localIgnore...)
 
+			allIgnoreDir := append([]string{}, cfg.GetEffectiveIgnoreDirs()...)
+			allIgnoreDir = append(allIgnoreDir, localIgnoreDir...)
+
 			allProfiles := append([]string{}, cfg.GetEffectiveProfiles()...)
 			allProfiles = append(allProfiles, localProfiles...)
 
@@ -34,6 +38,7 @@ func NewListCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 				FilesOnly:      filesOnly,
 				LongFormat:     longFormat,
 				IgnorePatterns: allIgnore,
+				IgnoreDirs:     allIgnoreDir,
 				IgnoreDotfiles: cfg.IgnoreDotfiles,
 				Profiles:       allProfiles,
 			}
@@ -44,9 +49,11 @@ func NewListCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 	cmd.Flags().BoolVarP(&filesOnly, "files-only", "f", false, "list regular files only, skipping directories")
 	cmd.Flags().BoolVarP(&longFormat, "long", "l", false, "display detailed file attributes (size, permissions)")
 	cmd.Flags().StringSliceVarP(&localIgnore, "ignore", "i", nil, "regex patterns to ignore matching files or directories")
+	cmd.Flags().StringSliceVarP(&localIgnoreDir, "ignore-dir", "D", nil, "directory patterns to ignore following gitignore convention (e.g. 'bin', 'coverage')")
 	cmd.Flags().StringSliceVarP(&localProfiles, "profile", "p", nil, "ignore profiles (e.g. 'go', 'node', 'python')")
 
 	return cmd
+
 }
 
 func resolvePaths(cliArgs []string, cfgPaths []string) ([]string, error) {

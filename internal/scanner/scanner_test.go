@@ -316,4 +316,66 @@ func TestWalkPaths_Basic(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("Filters out directories matching ignore directory gitignore patterns", func(t *testing.T) {
+		tempDir := t.TempDir()
+
+		binDir := filepath.Join(tempDir, "bin")
+		_ = os.Mkdir(binDir, 0755)
+		_ = os.WriteFile(filepath.Join(binDir, "gomper"), []byte("binary"), 0755)
+
+		covDir := filepath.Join(tempDir, "coverage")
+		_ = os.Mkdir(covDir, 0755)
+		_ = os.WriteFile(filepath.Join(covDir, "coverage.out"), []byte("coverage data"), 0644)
+
+		srcDir := filepath.Join(tempDir, "src")
+		_ = os.Mkdir(srcDir, 0755)
+		subBinDir := filepath.Join(srcDir, "bin")
+		_ = os.Mkdir(subBinDir, 0755)
+		_ = os.WriteFile(filepath.Join(subBinDir, "helper"), []byte("helper"), 0755)
+		_ = os.WriteFile(filepath.Join(srcDir, "main.go"), []byte("package main"), 0644)
+
+		rootBuildDir := filepath.Join(tempDir, "build")
+		_ = os.Mkdir(rootBuildDir, 0755)
+		_ = os.WriteFile(filepath.Join(rootBuildDir, "output.o"), []byte("obj"), 0644)
+
+		filter, err := scanner.NewFilter(nil, false, []string{"bin", "coverage/", "/build"})
+		if err != nil {
+			t.Fatalf("unexpected filter error: %v", err)
+		}
+
+		ctx := context.Background()
+		var paths []string
+		for entry, err := range scanner.WalkPaths(ctx, []string{tempDir}, filter) {
+			if err != nil {
+				t.Fatalf("unexpected walk error: %v", err)
+			}
+			paths = append(paths, entry.RelPath)
+		}
+
+		for _, p := range paths {
+			base := filepath.Base(p)
+			if base == "bin" || base == "gomper" || base == "coverage" || base == "coverage.out" || base == "build" || base == "output.o" || base == "helper" {
+				t.Errorf("expected path %s to be ignored by directory ignore rules, got listed", p)
+			}
+		}
+
+		var foundMain bool
+		for _, p := range paths {
+			if filepath.Base(p) == "main.go" {
+				foundMain = true
+			}
+		}
+		if !foundMain {
+			t.Errorf("expected main.go to be included, paths found: %v", paths)
+		}
+	})
+
+	t.Run("Returns error for invalid directory ignore regex pattern", func(t *testing.T) {
+		_, err := scanner.NewFilter(nil, false, []string{"[invalid_regex"})
+		if err == nil {
+			t.Errorf("expected error for invalid directory ignore pattern, got nil")
+		}
+	})
 }
+

@@ -17,6 +17,7 @@ type ListOptions struct {
 	FilesOnly      bool
 	LongFormat     bool
 	IgnorePatterns []string
+	IgnoreDirs     []string
 	IgnoreDotfiles bool
 	Profiles       []string
 }
@@ -26,6 +27,7 @@ type DumpOptions struct {
 	Format         OutputFormat
 	OutputPath     string
 	IgnorePatterns []string
+	IgnoreDirs     []string
 	IgnoreDotfiles bool
 	Profiles       []string
 	Instructions   string
@@ -75,7 +77,7 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 		return err
 	}
 
-	filter, err := scanner.NewFilter(patterns, opts.IgnoreDotfiles)
+	filter, err := scanner.NewFilter(patterns, opts.IgnoreDotfiles, opts.IgnoreDirs)
 	if err != nil {
 		return err
 	}
@@ -132,7 +134,8 @@ func (s *Service) Dump(ctx context.Context, out io.Writer, paths []string, opts 
 		return err
 	}
 
-	filter, err := scanner.NewFilter(patterns, opts.IgnoreDotfiles)
+	filter, err := scanner.NewFilter(patterns, opts.IgnoreDotfiles, opts.IgnoreDirs)
+
 	if err != nil {
 		return err
 	}
