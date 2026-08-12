@@ -11,12 +11,12 @@ import (
 )
 
 func TestNewFilter_EdgeCases(t *testing.T) {
-	filterNil, err := scanner.NewFilter(nil, false)
+	filterNil, err := scanner.NewFilter(scanner.FilterOptions{})
 	if err != nil || filterNil != nil {
 		t.Fatalf("expected nil filter for nil patterns, got filter=%v, err=%v", filterNil, err)
 	}
 
-	filterEmpty, err := scanner.NewFilter([]string{"", ""}, false)
+	filterEmpty, err := scanner.NewFilter(scanner.FilterOptions{IgnorePatterns: []string{"", ""}})
 	if err != nil || filterEmpty != nil {
 		t.Fatalf("expected nil filter for empty patterns, got filter=%v, err=%v", filterEmpty, err)
 	}
@@ -28,7 +28,7 @@ func TestWalkPaths_EdgeCases(t *testing.T) {
 		file := filepath.Join(tempDir, "ignore_me.txt")
 		_ = os.WriteFile(file, []byte("test"), 0644)
 
-		filter, _ := scanner.NewFilter([]string{`ignore_me\.txt$`}, false)
+		filter, _ := scanner.NewFilter(scanner.FilterOptions{IgnorePatterns: []string{`ignore_me\.txt$`}})
 		ctx := context.Background()
 
 		var count int
@@ -184,7 +184,9 @@ func TestWalkPaths_Basic(t *testing.T) {
 		file2 := filepath.Join(tempDir, "temp.log")
 		_ = os.WriteFile(file2, []byte("logs"), 0644)
 
-		filter, err := scanner.NewFilter([]string{"node_modules", `\.log$`}, false)
+		filter, err := scanner.NewFilter(scanner.FilterOptions{
+			IgnorePatterns: []string{"node_modules", `\.log$`},
+		})
 		if err != nil {
 			t.Fatalf("unexpected filter creation error: %v", err)
 		}
@@ -210,7 +212,7 @@ func TestWalkPaths_Basic(t *testing.T) {
 	})
 
 	t.Run("Returns error for invalid regex pattern", func(t *testing.T) {
-		_, err := scanner.NewFilter([]string{"[invalid"}, false)
+		_, err := scanner.NewFilter(scanner.FilterOptions{IgnorePatterns: []string{"[invalid"}})
 		if err == nil {
 			t.Errorf("expected error for invalid regex '[invalid', got nil")
 		}
@@ -295,7 +297,7 @@ func TestWalkPaths_Basic(t *testing.T) {
 		normalFile := filepath.Join(tempDir, "main.go")
 		_ = os.WriteFile(normalFile, []byte("package main"), 0644)
 
-		filter, err := scanner.NewFilter(nil, true)
+		filter, err := scanner.NewFilter(scanner.FilterOptions{IgnoreDotfiles: true})
 		if err != nil {
 			t.Fatalf("unexpected filter error: %v", err)
 		}
@@ -339,7 +341,9 @@ func TestWalkPaths_Basic(t *testing.T) {
 		_ = os.Mkdir(rootBuildDir, 0755)
 		_ = os.WriteFile(filepath.Join(rootBuildDir, "output.o"), []byte("obj"), 0644)
 
-		filter, err := scanner.NewFilter(nil, false, []string{"bin", "coverage/", "/build"})
+		filter, err := scanner.NewFilter(scanner.FilterOptions{
+			IgnoreDirs: []string{"bin", "coverage/", "/build"},
+		})
 		if err != nil {
 			t.Fatalf("unexpected filter error: %v", err)
 		}
@@ -372,10 +376,192 @@ func TestWalkPaths_Basic(t *testing.T) {
 	})
 
 	t.Run("Returns error for invalid directory ignore regex pattern", func(t *testing.T) {
-		_, err := scanner.NewFilter(nil, false, []string{"[invalid_regex"})
+		_, err := scanner.NewFilter(scanner.FilterOptions{IgnoreDirs: []string{"[invalid_regex"}})
 		if err == nil {
 			t.Errorf("expected error for invalid directory ignore pattern, got nil")
 		}
 	})
 }
+
+func TestNewFilter_PerlRegex(t *testing.T) {
+	tests := []struct {
+		name       string
+		pattern    string
+		testName   string
+		testRel    string
+		wantIgnore bool
+	}{
+		{
+			name:       "Positive Lookahead matches",
+			pattern:    `temp(?=\.txt$)`,
+			testName:   "temp.txt",
+			testRel:    "temp.txt",
+			wantIgnore: true,
+		},
+		{
+			name:       "Positive Lookahead does not match",
+			pattern:    `temp(?=\.txt$)`,
+			testName:   "temp.go",
+			testRel:    "temp.go",
+			wantIgnore: false,
+		},
+		{
+			name:       "Negative Lookahead matches non-matching suffix",
+			pattern:    `temp(?!\.txt$)`,
+			testName:   "temp.go",
+			testRel:    "temp.go",
+			wantIgnore: true,
+		},
+		{
+			name:       "Negative Lookahead excludes matching suffix",
+			pattern:    `temp(?!\.txt$)`,
+			testName:   "temp.txt",
+			testRel:    "temp.txt",
+			wantIgnore: false,
+		},
+		{
+			name:       "Positive Lookbehind matches prefix",
+			pattern:    `(?<=ignore_)file\.txt$`,
+			testName:   "ignore_file.txt",
+			testRel:    "ignore_file.txt",
+			wantIgnore: true,
+		},
+		{
+			name:       "Positive Lookbehind excludes non-matching prefix",
+			pattern:    `(?<=ignore_)file\.txt$`,
+			testName:   "keep_file.txt",
+			testRel:    "keep_file.txt",
+			wantIgnore: false,
+		},
+		{
+			name:       "Negative Lookbehind matches without prefix",
+			pattern:    `(?<!keep_)file\.txt$`,
+			testName:   "ignore_file.txt",
+			testRel:    "ignore_file.txt",
+			wantIgnore: true,
+		},
+		{
+			name:       "Negative Lookbehind excludes with prefix",
+			pattern:    `(?<!keep_)file\.txt$`,
+			testName:   "keep_file.txt",
+			testRel:    "keep_file.txt",
+			wantIgnore: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter, err := scanner.NewFilter(scanner.FilterOptions{IgnorePatterns: []string{tt.pattern}})
+			if err != nil {
+				t.Fatalf("failed to compile Perl regex %q: %v", tt.pattern, err)
+			}
+			got := filter.ShouldIgnore(tt.testName, tt.testRel)
+			if got != tt.wantIgnore {
+				t.Errorf("ShouldIgnore(%q, %q) with pattern %q = %v, want %v", tt.testName, tt.testRel, tt.pattern, got, tt.wantIgnore)
+			}
+		})
+	}
+}
+
+func TestNewFilter_NameFilter_WholeNameMatch(t *testing.T) {
+	t.Run("Matches whole file name anchor", func(t *testing.T) {
+		filter, err := scanner.NewFilter(scanner.FilterOptions{
+			NamePatterns: []string{"main"},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if filter.ShouldIgnore("main", "main", false) {
+			t.Errorf("expected 'main' to match name filter 'main'")
+		}
+		if !filter.ShouldIgnore("main.go", "main.go", false) {
+			t.Errorf("expected 'main.go' NOT to match whole name filter 'main'")
+		}
+	})
+
+	t.Run("Multiple name filter patterns (OR logic)", func(t *testing.T) {
+		filter, err := scanner.NewFilter(scanner.FilterOptions{
+			NamePatterns: []string{".*\\.go", ".*\\.md"},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if filter.ShouldIgnore("main.go", "main.go", false) {
+			t.Errorf("expected main.go to match name filter")
+		}
+		if filter.ShouldIgnore("README.md", "README.md", false) {
+			t.Errorf("expected README.md to match name filter")
+		}
+		if !filter.ShouldIgnore("app.exe", "app.exe", false) {
+			t.Errorf("expected app.exe NOT to match name filter")
+		}
+	})
+
+	t.Run("Invalid regex in name filter returns error", func(t *testing.T) {
+		_, err := scanner.NewFilter(scanner.FilterOptions{
+			NamePatterns: []string{"[invalid"},
+		})
+		if err == nil {
+			t.Errorf("expected error for invalid name filter regex, got nil")
+		}
+	})
+}
+
+func TestFilter_EvaluationSequence(t *testing.T) {
+	// The evaluation sequence strictly goes:
+	// 1. evaluate ignore dot files flag
+	// 2. ignore directories
+	// 3. name filter
+	// 4. ignore flag
+
+	opts := scanner.FilterOptions{
+		IgnoreDotfiles: true,
+		IgnoreDirs:     []string{"bin"},
+		NamePatterns:   []string{".*\\.go"},
+		IgnorePatterns: []string{".*_test\\.go"},
+	}
+
+	filter, err := scanner.NewFilter(opts)
+	if err != nil {
+		t.Fatalf("failed to create filter: %v", err)
+	}
+
+	// Step 1: Dotfiles rejected first
+	if !filter.ShouldIgnore(".hidden", ".hidden", true) {
+		t.Errorf("expected dotfile directory to be ignored at step 1")
+	}
+	if !filter.ShouldIgnore(".env", ".env", false) {
+		t.Errorf("expected dotfile to be ignored at step 1")
+	}
+
+	// Step 2: Ignored directories rejected second
+	if !filter.ShouldIgnore("bin", "bin", true) {
+		t.Errorf("expected bin directory to be ignored at step 2")
+	}
+
+	// Step 3: Name filter evaluated third
+	// Non-ignored directories pass step 3 so subtrees can be traversed
+	if filter.ShouldIgnore("src", "src", true) {
+		t.Errorf("expected directory 'src' NOT to be ignored by name filter at step 3")
+	}
+	// utils.js fails name filter match (.*\.go) at step 3 -> ignored
+	if !filter.ShouldIgnore("utils.js", "src/utils.js", false) {
+		t.Errorf("expected utils.js to be ignored at step 3 by name filter")
+	}
+
+	// Step 4: Ignore patterns evaluated fourth
+	// main_test.go matches name filter at step 3, but fails step 4 ignore pattern (.*_test\.go)
+	if !filter.ShouldIgnore("main_test.go", "src/main_test.go", false) {
+		t.Errorf("expected main_test.go to be ignored at step 4 by ignore pattern")
+	}
+
+	// main.go passes step 1, step 2, step 3 (matches name filter), step 4 (not ignored) -> kept
+	if filter.ShouldIgnore("main.go", "src/main.go", false) {
+		t.Errorf("expected main.go to NOT be ignored")
+	}
+}
+
+
 

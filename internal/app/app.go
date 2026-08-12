@@ -14,11 +14,11 @@ import (
 
 // ListOptions specifies formatting and filtering controls for the list command.
 type ListOptions struct {
-	FilesOnly      bool
 	LongFormat     bool
 	IgnorePatterns []string
 	IgnoreDirs     []string
 	IgnoreDotfiles bool
+	NameFilters    []string
 	Profiles       []string
 }
 
@@ -29,6 +29,7 @@ type DumpOptions struct {
 	IgnorePatterns []string
 	IgnoreDirs     []string
 	IgnoreDotfiles bool
+	NameFilters    []string
 	Profiles       []string
 	Instructions   string
 }
@@ -69,7 +70,6 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 	logger.DebugContext(ctx, "starting list operation",
 		slog.Any("paths", paths),
 		slog.Any("profiles", opts.Profiles),
-		slog.Bool("files_only", opts.FilesOnly),
 	)
 
 	patterns, err := buildCombinedPatterns(opts.Profiles, opts.IgnorePatterns)
@@ -77,7 +77,12 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 		return err
 	}
 
-	filter, err := scanner.NewFilter(patterns, opts.IgnoreDotfiles, opts.IgnoreDirs)
+	filter, err := scanner.NewFilter(scanner.FilterOptions{
+		IgnorePatterns: patterns,
+		IgnoreDotfiles: opts.IgnoreDotfiles,
+		NamePatterns:   opts.NameFilters,
+		IgnoreDirs:     opts.IgnoreDirs,
+	})
 	if err != nil {
 		return err
 	}
@@ -89,7 +94,7 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 			continue
 		}
 
-		if opts.FilesOnly && entry.IsDir {
+		if entry.IsDir {
 			continue
 		}
 
@@ -99,12 +104,7 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 		}
 
 		if opts.LongFormat {
-			typeStr := "FILE"
-			if entry.IsDir {
-				typeStr = "DIR "
-			}
-			_, _ = fmt.Fprintf(out, "%s  %10d B  %s  %s\n",
-				typeStr,
+			_, _ = fmt.Fprintf(out, "FILE  %10d B  %s  %s\n",
 				entry.Info.Size(),
 				entry.Info.Mode(),
 				displayPath,
@@ -134,7 +134,12 @@ func (s *Service) Dump(ctx context.Context, out io.Writer, paths []string, opts 
 		return err
 	}
 
-	filter, err := scanner.NewFilter(patterns, opts.IgnoreDotfiles, opts.IgnoreDirs)
+	filter, err := scanner.NewFilter(scanner.FilterOptions{
+		IgnorePatterns: patterns,
+		IgnoreDotfiles: opts.IgnoreDotfiles,
+		NamePatterns:   opts.NameFilters,
+		IgnoreDirs:     opts.IgnoreDirs,
+	})
 
 	if err != nil {
 		return err

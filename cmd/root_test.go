@@ -142,11 +142,17 @@ func TestCLI_ListCommand(t *testing.T) {
 		}
 	})
 
-	t.Run("Executes successfully listing files in directory", func(t *testing.T) {
+	t.Run("Executes successfully listing files in directory while excluding directories", func(t *testing.T) {
 		tempDir := t.TempDir()
+		subDir := filepath.Join(tempDir, "subfolder")
+		_ = os.Mkdir(subDir, 0755)
 		testFile := filepath.Join(tempDir, "test.txt")
+		subFile := filepath.Join(subDir, "sub.txt")
 		if err := os.WriteFile(testFile, []byte("content"), 0644); err != nil {
 			t.Fatalf("failed to create test file: %v", err)
+		}
+		if err := os.WriteFile(subFile, []byte("sub content"), 0644); err != nil {
+			t.Fatalf("failed to create sub file: %v", err)
 		}
 
 		rootCmd := cmd.NewRootCommand(nil)
@@ -162,8 +168,14 @@ func TestCLI_ListCommand(t *testing.T) {
 		}
 
 		output := outBuf.String()
-		if !strings.Contains(output, "test.txt") {
-			t.Errorf("expected output to contain test.txt, got: %q", output)
+		if !strings.Contains(output, "test.txt") || !strings.Contains(output, "sub.txt") {
+			t.Errorf("expected output to contain test.txt and sub.txt, got: %q", output)
+		}
+		lines := strings.Split(strings.TrimSpace(output), "\n")
+		for _, line := range lines {
+			if line == "subfolder" || line == "subfolder/" {
+				t.Errorf("expected directory 'subfolder' to be excluded from list output, got line: %q in output: %q", line, output)
+			}
 		}
 	})
 
@@ -452,4 +464,90 @@ func TestCLI_DumpCommand(t *testing.T) {
 		}
 	})
 }
+
+func TestCLI_NameFilterFlag(t *testing.T) {
+	t.Run("Executes list with --name / -n flag filtering whole file name", func(t *testing.T) {
+		tempDir := t.TempDir()
+		_ = os.WriteFile(filepath.Join(tempDir, "main.go"), []byte("package main"), 0644)
+		_ = os.WriteFile(filepath.Join(tempDir, "utils.js"), []byte("console.log()"), 0644)
+		_ = os.WriteFile(filepath.Join(tempDir, "README.md"), []byte("# Readme"), 0644)
+
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"list", tempDir, "-n", ".*\\.go"})
+		err := rootCmd.Execute()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := outBuf.String()
+		if !strings.Contains(output, "main.go") {
+			t.Errorf("expected main.go in output, got: %q", output)
+		}
+		if strings.Contains(output, "utils.js") || strings.Contains(output, "README.md") {
+			t.Errorf("expected utils.js and README.md to be filtered by -n flag, got: %q", output)
+		}
+	})
+
+	t.Run("Loads name_filter from YAML config file", func(t *testing.T) {
+		tempDir := t.TempDir()
+		_ = os.WriteFile(filepath.Join(tempDir, "app.py"), []byte("print('hi')"), 0644)
+		_ = os.WriteFile(filepath.Join(tempDir, "notes.txt"), []byte("notes"), 0644)
+
+		configContent := "paths:\n  - " + tempDir + "\nname_filter:\n  - '.*\\.py'\n"
+		configFile := filepath.Join(tempDir, "name-config.yaml")
+		_ = os.WriteFile(configFile, []byte(configContent), 0644)
+
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"list", "--config", configFile})
+		err := rootCmd.Execute()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := outBuf.String()
+		if !strings.Contains(output, "app.py") {
+			t.Errorf("expected app.py in output, got: %q", output)
+		}
+		if strings.Contains(output, "notes.txt") {
+			t.Errorf("expected notes.txt to be filtered by name_filter from config, got: %q", output)
+		}
+	})
+
+	t.Run("Executes dump with --name flag filtering output", func(t *testing.T) {
+		tempDir := t.TempDir()
+		_ = os.WriteFile(filepath.Join(tempDir, "main.go"), []byte("package main"), 0644)
+		_ = os.WriteFile(filepath.Join(tempDir, "data.json"), []byte("{}"), 0644)
+
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"dump", tempDir, "--name", ".*\\.go"})
+		err := rootCmd.Execute()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := outBuf.String()
+		if !strings.Contains(output, "main.go") {
+			t.Errorf("expected main.go in dump output, got: %q", output)
+		}
+		if strings.Contains(output, "data.json") {
+			t.Errorf("expected data.json to be filtered out, got: %q", output)
+		}
+	})
+}
+
 

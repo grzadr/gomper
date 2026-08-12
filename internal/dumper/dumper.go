@@ -238,7 +238,7 @@ func (d *XMLDumper) GenerateXML(ctx context.Context, entries []scanner.Entry, in
 			if err != nil {
 				return err
 			}
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 			return FormatLineNumberedContent(file, w, true)
 		}()
 		if err != nil {
@@ -311,7 +311,7 @@ func (d *XMLDumper) GenerateMarkdown(ctx context.Context, entries []scanner.Entr
 			if err != nil {
 				return err
 			}
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 			return FormatLineNumberedContent(file, w, false)
 		}()
 		if err != nil {

@@ -14,14 +14,14 @@ Built with **Go 1.26 range-over-function iterators (`iter.Seq2`)**, Cobra, and V
 
 - **Range-Over-Function Iteration**: Memory-efficient directory traversal using Go 1.26 native `iter.Seq2[Entry, error]` iterators.
 - **Embedded Gitignore Profiles**: Preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`) embedded into the binary with `//go:embed`.
-- **Regex Pattern & Dotfile Filtering**: Filter out files and directories matching custom regular expression rules or hidden dotfiles (`-d` / `--ignore-dotfiles`) with `filepath.SkipDir` subtree optimization.
+- **File Name & Regex Filtering**: Filter files matching custom regular expressions against their whole base file name (`-n` / `--name`), exclude files/directories with custom ignore rules (`-i` / `--ignore`), ignore directories (`-D` / `--ignore-dir`), or hide dotfiles (`-d` / `--ignore-dotfiles`). Filtering is strictly evaluated in 4 steps: 1. ignore dotfiles, 2. ignore directories, 3. name filter, 4. ignore patterns.
 - **Atomic File Output**: Transactional file writing via `internal/filetx` using temporary files, fsync, and parent directory sync to prevent partial writes.
 - **Token Estimation & Line Numbering**: Automatic token estimation (~4 chars per token) and line numbering (`1 | content...`) tailored for LLM context consumption.
 - **CLI Subcommands**:
-  - `list`: Inspect files and subdirectories with optional filtering (`-f`, `-i`, `-p`, `-d`) and detailed attribute views (`-l`).
+  - `list`: Inspect matching regular files with optional filtering (`-n`, `-i`, `-p`, `-d`, `-D`) and detailed attribute views (`-l`).
   - `dump`: Export directory structure into Markdown or XML formats (`-f`, `-o`, `-u` / `--instructions`).
   - `profiles`: Display available embedded language ignore templates.
-- **YAML Configuration File**: Load target `paths`, `profiles`, `ignore` patterns, `ignore_dotfiles`, `instructions`, `format`, and `log_level` from `gomper.yaml`.
+- **YAML Configuration File**: Load target `paths`, `profiles`, `name_filter`, `ignore` patterns, `ignore_dir`, `ignore_dotfiles`, `instructions`, `format`, and `log_level` from `gomper.yaml`.
 - **Structured Logging**: Context-aware `log/slog` logger with dynamic level mutation (`slog.LevelVar`).
 - **Zero Global State Architecture**: Decoupled CLI transport logic (`cmd/`) and domain execution logic (`internal/app/`, `internal/dumper/`, `internal/filetx/`, `internal/scanner/`, `internal/setup/`).
 
@@ -65,7 +65,7 @@ make clean
 
 ### 1. List Files in Directories
 
-List files and directories within one or more paths:
+List regular files within one or more paths (skipping directory nodes):
 
 ```bash
 ./bin/gomper list ./cmd
@@ -73,7 +73,6 @@ List files and directories within one or more paths:
 
 #### Output
 ```
-cmd
 dump.go
 list.go
 profiles.go
@@ -83,10 +82,17 @@ root_test.go
 
 #### Options
 
-- **Regular Files Only** (`-f`, `--files-only`): Skip directory nodes.
+- **File Name Filter** (`-n`, `--name`): Filter files matching custom regular expressions against their whole base file name (`info.Name()`). Non-matching files are excluded.
   ```bash
-  ./bin/gomper list ./cmd --files-only
+  ./bin/gomper list . --name ".*\.go$" --ignore ".*_test\.go$"
   ```
+
+  > **Evaluation Sequence**:
+  > Filtering follows a strict 4-step sequence:
+  > 1. **Ignore dot files** (`-d` / `--ignore-dotfiles`)
+  > 2. **Ignore directories** (`-D` / `--ignore-dir`)
+  > 3. **Name filter** (`-n` / `--name`)
+  > 4. **Ignore flag & profiles** (`-i` / `--ignore` / `--profile`)
 
 - **Language & Generic Ignore Profiles** (`-p`, `--profile`): Apply preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`). The `generic` profile automatically excludes environment files (`.env`, `.env.*`), OS metadata (`.DS_Store`, `Thumbs.db`), IDE configs (`.vscode/`, `.idea/`), and VCS metadata (`.git/`).
   ```bash
@@ -98,7 +104,7 @@ root_test.go
   ./bin/gomper list . --ignore-dir bin --ignore-dir coverage
   ```
 
-- **Regex Pattern Ignore** (`-i`, `--ignore`): Filter out files or directories matching custom regular expressions.
+- **Regex Pattern Ignore** (`-i`, `--ignore`): Filter out files or directories matching custom Perl-compatible regular expressions (supports lookahead and lookbehind assertions).
   ```bash
   ./bin/gomper list . --ignore "_test\.go$" --ignore "node_modules"
   ```
@@ -113,7 +119,6 @@ root_test.go
   ./bin/gomper list ./cmd --long
   ```
   ```
-  DIR          192 B  drwxr-xr-x  cmd
   FILE         771 B  -rw-r--r--  dump.go
   FILE         824 B  -rw-r--r--  list.go
   FILE        2191 B  -rw-r--r--  root.go
@@ -179,6 +184,9 @@ profiles:
   - generic
   - go
 
+name_filter:
+  - ".*\\.go$"
+
 ignore:
   - "^tmp/"
 
@@ -206,6 +214,7 @@ When `paths` are specified in `gomper.yaml`, running `./bin/gomper list` or `./b
 | --- | --- | --- | --- | --- |
 | Custom Config File | `--config` | - | - | `.` / `$HOME/gomper.yaml` |
 | Target Paths | - | - | `paths` | Positional CLI args |
+| File Name Filter | `--name`, `-n` | `GOMPER_NAME` | `name` / `name_filter` / `name_filters` | `[]` |
 | Ignore Profiles | `--profile`, `-p` | `GOMPER_PROFILE` | `profiles` / `profile` | `[]` |
 | Custom Ignore Regex | `--ignore`, `-i` | `GOMPER_IGNORE` | `ignore` | `[]` |
 | Ignore Directory | `--ignore-dir`, `-D` | `GOMPER_IGNORE_DIR` | `ignore_dir` / `ignore_dirs` | `[]` |

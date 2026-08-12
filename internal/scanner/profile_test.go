@@ -39,7 +39,7 @@ func TestLoadProfilePatterns_Generic(t *testing.T) {
 		t.Errorf("expected patterns for 'generic' profile, got empty")
 	}
 
-	filter, err := scanner.NewFilter(patterns, false)
+	filter, err := scanner.NewFilter(scanner.FilterOptions{IgnorePatterns: patterns})
 	if err != nil {
 		t.Fatalf("failed to create filter from loaded patterns: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestLoadProfilePatterns(t *testing.T) {
 		t.Errorf("expected patterns for 'go' profile, got empty")
 	}
 
-	filter, err := scanner.NewFilter(patterns, false)
+	filter, err := scanner.NewFilter(scanner.FilterOptions{IgnorePatterns: patterns})
 	if err != nil {
 		t.Fatalf("failed to create filter from loaded patterns: %v", err)
 	}

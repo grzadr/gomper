@@ -146,5 +146,37 @@ func TestWriteAtomically(t *testing.T) {
 			t.Errorf("expected rename failure error, got: %v", err)
 		}
 	})
+
+	t.Run("Succeeds with warning when parent directory sync faces permission error", func(t *testing.T) {
+		tempDir := t.TempDir()
+		restrictedDir := filepath.Join(tempDir, "restricted")
+		if err := os.Mkdir(restrictedDir, 0755); err != nil {
+			t.Fatalf("failed to create restricted directory: %v", err)
+		}
+		targetPath := filepath.Join(restrictedDir, "output.txt")
+
+		err := filetx.WriteAtomically(context.Background(), targetPath, func(ctx context.Context, w io.Writer) error {
+			if _, err := w.Write([]byte("permission test data")); err != nil {
+				return err
+			}
+			// Remove read permission from directory (0333: write+exec, no read) so os.Rename succeeds but os.Open(dir) fails with permission denied
+			_ = os.Chmod(restrictedDir, 0333)
+			return nil
+		})
+		defer func() { _ = os.Chmod(restrictedDir, 0755) }()
+
+		if err != nil {
+			t.Fatalf("expected WriteAtomically to succeed with warning on directory sync permission error, got: %v", err)
+		}
+
+		_ = os.Chmod(restrictedDir, 0755)
+		content, err := os.ReadFile(targetPath)
+		if err != nil {
+			t.Fatalf("failed to read target file after atomic write: %v", err)
+		}
+		if string(content) != "permission test data" {
+			t.Errorf("expected 'permission test data', got %q", string(content))
+		}
+	})
 }
 

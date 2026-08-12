@@ -47,26 +47,7 @@ func TestService_List(t *testing.T) {
 	appInst := setup.NewApp(slog.LevelDebug)
 	svc := app.NewService(appInst)
 
-	t.Run("Standard list execution", func(t *testing.T) {
-		tempDir := t.TempDir()
-		file1 := filepath.Join(tempDir, "file1.txt")
-		_ = os.WriteFile(file1, []byte("hello"), 0644)
-
-		outBuf := new(bytes.Buffer)
-		opts := app.ListOptions{}
-
-		err := svc.List(context.Background(), outBuf, []string{tempDir}, opts)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		output := outBuf.String()
-		if !strings.Contains(output, "file1.txt") {
-			t.Errorf("expected output to contain file1.txt, got: %q", output)
-		}
-	})
-
-	t.Run("List with FilesOnly option", func(t *testing.T) {
+	t.Run("Standard list execution excludes directories", func(t *testing.T) {
 		tempDir := t.TempDir()
 		subDir := filepath.Join(tempDir, "subdir")
 		_ = os.Mkdir(subDir, 0755)
@@ -74,7 +55,7 @@ func TestService_List(t *testing.T) {
 		_ = os.WriteFile(file1, []byte("data"), 0644)
 
 		outBuf := new(bytes.Buffer)
-		opts := app.ListOptions{FilesOnly: true}
+		opts := app.ListOptions{}
 
 		err := svc.List(context.Background(), outBuf, []string{tempDir}, opts)
 		if err != nil {
@@ -86,7 +67,7 @@ func TestService_List(t *testing.T) {
 			t.Errorf("expected output to contain sample.txt, got: %q", output)
 		}
 		if strings.Contains(output, "subdir") {
-			t.Errorf("expected directory 'subdir' to be excluded with FilesOnly=true, got: %q", output)
+			t.Errorf("expected directory 'subdir' to be excluded by default from list output, got: %q", output)
 		}
 	})
 

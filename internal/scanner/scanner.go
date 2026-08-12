@@ -7,8 +7,9 @@ import (
 	"iter"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
+
+	"github.com/dlclark/regexp2"
 )
 
 // Entry encapsulates metadata and fs.FileInfo for a scanned file or directory.
@@ -20,38 +21,42 @@ type Entry struct {
 	IsDir   bool
 }
 
+// FilterOptions holds configuration options for building a Filter.
+type FilterOptions struct {
+	IgnorePatterns []string
+	IgnoreDotfiles bool
+	NamePatterns   []string
+	IgnoreDirs     []string
+}
+
 // Filter holds compiled regular expression patterns and options used to exclude files and directories during scanning.
 type Filter struct {
-	regexes        []*regexp.Regexp
-	dirRegexes     []*regexp.Regexp
+	nameRegexes    []*regexp2.Regexp
+	regexes        []*regexp2.Regexp
+	dirRegexes     []*regexp2.Regexp
 	ignoreDotfiles bool
 }
 
-// NewFilter parses and compiles regex pattern strings and directory ignore patterns into a Filter with optional dotfile exclusion.
-func NewFilter(patterns []string, ignoreDotfiles bool, dirPatterns ...[]string) (*Filter, error) {
-	var userDirPatterns []string
-	if len(dirPatterns) > 0 {
-		userDirPatterns = dirPatterns[0]
-	}
-
-	if len(patterns) == 0 && len(userDirPatterns) == 0 && !ignoreDotfiles {
+// NewFilter parses and compiles regex pattern strings, directory ignore patterns, and name filter patterns into a Filter.
+func NewFilter(opts FilterOptions) (*Filter, error) {
+	if len(opts.IgnorePatterns) == 0 && len(opts.IgnoreDirs) == 0 && len(opts.NamePatterns) == 0 && !opts.IgnoreDotfiles {
 		return nil, nil
 	}
 
-	var regexes []*regexp.Regexp
-	for _, p := range patterns {
+	var regexes []*regexp2.Regexp
+	for _, p := range opts.IgnorePatterns {
 		if p == "" {
 			continue
 		}
-		re, err := regexp.Compile(p)
+		re, err := regexp2.Compile(p, regexp2.None)
 		if err != nil {
 			return nil, fmt.Errorf("invalid ignore regex pattern %q: %w", p, err)
 		}
 		regexes = append(regexes, re)
 	}
 
-	var dirRegexes []*regexp.Regexp
-	for _, dp := range userDirPatterns {
+	var dirRegexes []*regexp2.Regexp
+	for _, dp := range opts.IgnoreDirs {
 		if dp == "" {
 			continue
 		}
@@ -59,45 +64,95 @@ func NewFilter(patterns []string, ignoreDotfiles bool, dirPatterns ...[]string) 
 		if pattern == "" {
 			continue
 		}
-		re, err := regexp.Compile(pattern)
+		re, err := regexp2.Compile(pattern, regexp2.None)
 		if err != nil {
 			return nil, fmt.Errorf("invalid ignore directory pattern %q: %w", dp, err)
 		}
 		dirRegexes = append(dirRegexes, re)
 	}
 
-	if len(regexes) == 0 && len(dirRegexes) == 0 && !ignoreDotfiles {
+	var nameRegexes []*regexp2.Regexp
+	for _, np := range opts.NamePatterns {
+		if np == "" {
+			continue
+		}
+		anchoredPattern := fmt.Sprintf("^(?:%s)$", np)
+		re, err := regexp2.Compile(anchoredPattern, regexp2.None)
+		if err != nil {
+			return nil, fmt.Errorf("invalid name filter regex pattern %q: %w", np, err)
+		}
+		nameRegexes = append(nameRegexes, re)
+	}
+
+	if len(regexes) == 0 && len(dirRegexes) == 0 && len(nameRegexes) == 0 && !opts.IgnoreDotfiles {
 		return nil, nil
 	}
 	return &Filter{
+		nameRegexes:    nameRegexes,
 		regexes:        regexes,
 		dirRegexes:     dirRegexes,
-		ignoreDotfiles: ignoreDotfiles,
+		ignoreDotfiles: opts.IgnoreDotfiles,
 	}, nil
 }
 
-// ShouldIgnore checks if the given entry name or relative path matches any ignore regex, ignore directory rule, or dotfile rule.
-func (f *Filter) ShouldIgnore(name string, relPath string) bool {
+// ShouldIgnore checks if an entry should be ignored following the strict evaluation order:
+// 1. evaluate ignore dot files flag
+// 2. ignore directories
+// 3. name filter (matches whole name of the file)
+// 4. ignore flag
+func (f *Filter) ShouldIgnore(name string, relPath string, isDir ...bool) bool {
 	if f == nil {
 		return false
 	}
+	var isDirectory bool
+	if len(isDir) > 0 {
+		isDirectory = isDir[0]
+	}
 	slashRel := filepath.ToSlash(relPath)
+
+	// Step 1: Evaluate ignore dot files flag
 	if f.ignoreDotfiles {
 		baseName := filepath.Base(slashRel)
 		if strings.HasPrefix(name, ".") || strings.HasPrefix(baseName, ".") {
 			return true
 		}
 	}
+
+	// Step 2: Evaluate ignore directories
 	for _, re := range f.dirRegexes {
-		if re.MatchString(name) || re.MatchString(slashRel) {
+		if match, _ := re.MatchString(name); match {
+			return true
+		}
+		if match, _ := re.MatchString(slashRel); match {
 			return true
 		}
 	}
+
+	// Step 3: Evaluate name filter (matches whole name of the file)
+	// Only files that would match expression should be further analyzed.
+	if !isDirectory && len(f.nameRegexes) > 0 {
+		matched := false
+		for _, re := range f.nameRegexes {
+			if match, _ := re.MatchString(name); match {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return true
+		}
+	}
+
+	// Step 4: Evaluate ignore flag
 	for _, re := range f.regexes {
-		if re.MatchString(name) || re.MatchString(slashRel) {
+		if match, _ := re.MatchString(name); match {
+			return true
+		}
+		if match, _ := re.MatchString(slashRel); match {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -120,7 +175,7 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 
 			// If root is a single file, test filter and yield if not ignored
 			if !info.IsDir() {
-				if filter.ShouldIgnore(info.Name(), filepath.Base(cleanedRoot)) {
+				if filter.ShouldIgnore(info.Name(), filepath.Base(cleanedRoot), false) {
 					continue
 				}
 				entry := Entry{
@@ -157,7 +212,7 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 				}
 
 				// Check ignore filter for children (skip directory trees via filepath.SkipDir)
-				if path != cleanedRoot && filter.ShouldIgnore(d.Name(), relPath) {
+				if path != cleanedRoot && filter.ShouldIgnore(d.Name(), relPath, d.IsDir()) {
 					if d.IsDir() {
 						return filepath.SkipDir
 					}
@@ -192,3 +247,4 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 		}
 	}
 }
+

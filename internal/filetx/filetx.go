@@ -2,10 +2,14 @@ package filetx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // WriteAtomically writes content to targetPath in a fully atomic, transactional manner.
@@ -58,13 +62,40 @@ func WriteAtomically(ctx context.Context, targetPath string, writeFunc func(ctx 
 
 	dirFile, err := os.Open(dir)
 	if err != nil {
+		if isPermissionError(err) {
+			slog.WarnContext(ctx, "failed to open parent directory for sync due to insufficient permissions",
+				slog.String("directory", dir),
+				slog.Any("error", err),
+			)
+			return nil
+		}
 		return fmt.Errorf("failed to open parent directory %s: %w", dir, err)
 	}
 	defer func() { _ = dirFile.Close() }()
 
 	if err = dirFile.Sync(); err != nil {
+		if isPermissionError(err) {
+			slog.WarnContext(ctx, "failed to sync parent directory due to insufficient permissions",
+				slog.String("directory", dir),
+				slog.Any("error", err),
+			)
+			return nil
+		}
 		return fmt.Errorf("failed to sync parent directory %s: %w", dir, err)
 	}
 
 	return nil
+}
+
+func isPermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if os.IsPermission(err) || errors.Is(err, fs.ErrPermission) || errors.Is(err, os.ErrPermission) {
+		return true
+	}
+	if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
+		return true
+	}
+	return false
 }

@@ -3,6 +3,7 @@ module github.com/grzadr/gomper
 go 1.26.5
 
 require (
+	github.com/dlclark/regexp2 v1.12.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 )
