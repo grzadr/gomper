@@ -10,6 +10,7 @@ import (
 	"github.com/grzadr/gomper/internal/app"
 	"github.com/grzadr/gomper/internal/config"
 	"github.com/grzadr/gomper/internal/setup"
+	"github.com/grzadr/gomper/internal/version"
 )
 
 // NewRootCommand creates an isolated root command without global package variables.
@@ -28,6 +29,7 @@ func NewRootCommand(appInst *setup.App) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:           "gomper",
 		Short:         "Dump directory structure into Markdown or XML files",
+		Version:       version.Get(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

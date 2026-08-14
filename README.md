@@ -1,7 +1,7 @@
 # gomper
 
 [![Go Version](https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat&logo=go)](https://go.dev)
-[![Coverage](https://img.shields.io/badge/Coverage-97.4%25-brightgreen.svg)](Makefile)
+[![Coverage](https://img.shields.io/badge/Coverage-100.0%25-brightgreen.svg)](Makefile)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 `gomper` is a high-performance Go CLI application designed to inspect directory structures and dump them into formatted Markdown or XML files.
@@ -23,8 +23,8 @@ Built with **Go 1.26 range-over-function iterators (`iter.Seq2`)**, Cobra, and V
   - `profiles`: Display available embedded language ignore templates.
   - `formats`: Display supported file formats, extensions, and special filenames.
 - **YAML Configuration File**: Load target `paths`, `profiles`, `name_filter`, `ignore` patterns, `ignore_dir`, `ignore_dotfiles`, `instructions`, `format`, and `log_level` from `gomper.yaml`.
-- **Structured Logging**: Context-aware `log/slog` logger with dynamic level mutation (`slog.LevelVar`).
-- **Zero Global State Architecture**: Decoupled CLI transport logic (`cmd/`) and domain execution logic (`internal/app/`, `internal/dumper/`, `internal/filetx/`, `internal/scanner/`, `internal/setup/`).
+- **Version Resolution Flag (`-v` / `--version`)**: Automatic multi-tier version determination with 4-step fallback sequence: explicit `-ldflags`, `runtime/debug.ReadBuildInfo()` module version, VCS revision/modified metadata, and `"dev"` fallback.
+- **Zero Global State Architecture**: Decoupled CLI transport logic (`cmd/`) and domain execution logic (`internal/app/`, `internal/dumper/`, `internal/filetx/`, `internal/scanner/`, `internal/setup/`, `internal/version/`).
 
 ---
 
@@ -345,7 +345,7 @@ gomper/
 │   │   ├── extensions.go # Extension-to-language lookup
 │   │   ├── extensions_test.go
 │   │   ├── profile.go  # Profile loader & gitignore-to-regex converter
-│   │   ├── profiles/   # Embedded gitignore template files (generic, go, node, python, etc.)
+│   │   ├── profiles/   # Embedded gitignore template files (generic, go, node, python, terraform, etc.)
 │   │   ├── profile_test.go
 │   │   ├── scanner.go  # WalkPaths (iter.Seq2[Entry, error])
 │   │   └── scanner_test.go
@@ -367,19 +367,19 @@ gomper/
 
 ## Testing & Code Quality
 
-`gomper` maintains **97.4% overall statement test coverage** (with near 100% coverage across core internal packages):
+`gomper` maintains **100.0% overall statement test coverage** across all packages:
 
 | Package | Statement Coverage |
 | --- | --- |
 | `github.com/grzadr/gomper` (`main`) | **100.0%** |
+| `cmd` | **100.0%** |
+| `internal/app` | **100.0%** |
 | `internal/config` | **100.0%** |
+| `internal/dumper` | **100.0%** |
+| `internal/filetx` | **100.0%** |
+| `internal/scanner` | **100.0%** |
 | `internal/setup` | **100.0%** |
-| `internal/dumper` | **99.5%** |
-| `internal/app` | **98.7%** |
-| `cmd` | **96.9%** |
-| `internal/scanner` | **95.7%** |
-| `internal/filetx` | **87.1%** |
-| **Total** | **97.4%** |
+| **Total** | **100.0%** |
 
 Run unit tests and coverage analysis:
 

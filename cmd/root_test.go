@@ -612,4 +612,45 @@ func TestCLI_NameFilterFlag(t *testing.T) {
 	})
 }
 
+func TestCLI_VersionFlag(t *testing.T) {
+	t.Run("Displays version with --version flag", func(t *testing.T) {
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"--version"})
+		err := rootCmd.Execute()
+		if err != nil {
+			t.Fatalf("unexpected error running --version: %v", err)
+		}
+
+		output := outBuf.String()
+		if !strings.Contains(output, "gomper version") {
+			t.Errorf("expected output to contain 'gomper version', got: %q", output)
+		}
+	})
+
+	t.Run("Displays version with -v shorthand flag", func(t *testing.T) {
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"-v"})
+		err := rootCmd.Execute()
+		if err != nil {
+			t.Fatalf("unexpected error running -v: %v", err)
+		}
+
+		output := outBuf.String()
+		if !strings.Contains(output, "gomper version") {
+			t.Errorf("expected output to contain 'gomper version', got: %q", output)
+		}
+	})
+}
+
+
 
