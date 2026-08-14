@@ -59,17 +59,14 @@ func NewRootCommand(appInst *setup.App) *cobra.Command {
 	rootCmd.AddCommand(NewListCommand(cfg, service))
 	rootCmd.AddCommand(NewDumpCommand(cfg, service))
 	rootCmd.AddCommand(NewProfilesCommand())
+	rootCmd.AddCommand(NewFormatsCommand())
 
 	return rootCmd
 }
 
 func initConfig(cmd *cobra.Command, v *viper.Viper, cfg *config.Config) error {
-	if err := v.BindPFlags(cmd.Flags()); err != nil {
-		return fmt.Errorf("failed to bind command flags: %w", err)
-	}
-	if err := v.BindPFlags(cmd.PersistentFlags()); err != nil {
-		return fmt.Errorf("failed to bind persistent flags: %w", err)
-	}
+	_ = v.BindPFlags(cmd.Flags())
+	_ = v.BindPFlags(cmd.PersistentFlags())
 
 	if cfg.ConfigFile != "" {
 		v.SetConfigFile(cfg.ConfigFile)

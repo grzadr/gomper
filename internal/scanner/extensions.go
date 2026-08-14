@@ -1,7 +1,9 @@
 package scanner
 
 import (
+	"cmp"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -43,6 +45,12 @@ var SupportedExtensions = map[string]string{
 	".cfg":   "ini",
 	".env":   "dotenv",
 	".proto": "protobuf",
+
+	// Terraform / HCL
+	".tf":     "terraform",
+	".tfvars": "terraform",
+	".tftpl":  "terraform",
+	".hcl":    "hcl",
 
 	// Systems / Languages
 	".c":     "c",
@@ -113,3 +121,37 @@ func LookupLanguage(path string) (string, bool) {
 	}
 	return cleanExt, false
 }
+
+// FormatEntry represents a file extension and its mapped language identifier.
+type FormatEntry struct {
+	Extension string
+	Language  string
+}
+
+// SpecialFileEntry represents a special filename and its mapped language identifier.
+type SpecialFileEntry struct {
+	Filename string
+	Language string
+}
+
+// ListFormats returns sorted slices of supported file extensions and special filenames.
+func ListFormats() ([]FormatEntry, []SpecialFileEntry, error) {
+	exts := make([]FormatEntry, 0, len(SupportedExtensions))
+	for ext, lang := range SupportedExtensions {
+		exts = append(exts, FormatEntry{Extension: ext, Language: lang})
+	}
+	slices.SortFunc(exts, func(a, b FormatEntry) int {
+		return cmp.Compare(a.Extension, b.Extension)
+	})
+
+	specials := make([]SpecialFileEntry, 0, len(SpecialFilenames))
+	for file, lang := range SpecialFilenames {
+		specials = append(specials, SpecialFileEntry{Filename: file, Language: lang})
+	}
+	slices.SortFunc(specials, func(a, b SpecialFileEntry) int {
+		return cmp.Compare(a.Filename, b.Filename)
+	})
+
+	return exts, specials, nil
+}
+

@@ -64,6 +64,9 @@ func buildCombinedPatterns(profiles []string, userPatterns []string) ([]string, 
 	return combined, nil
 }
 
+// Hook for scanning paths, allowing test overrides for edge cases.
+var walkPathsFunc = scanner.WalkPaths
+
 // List iterates over files in the specified paths using scanner.WalkPaths and formats output.
 func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts ListOptions) error {
 	logger := s.logger()
@@ -87,7 +90,7 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 		return err
 	}
 
-	for entry, err := range scanner.WalkPaths(ctx, paths, filter) {
+	for entry, err := range walkPathsFunc(ctx, paths, filter) {
 		if err != nil {
 			logger.ErrorContext(ctx, "scan error encountered", slog.String("path", entry.Path), slog.Any("error", err))
 			_, _ = fmt.Fprintf(out, "[ERROR] %s: %v\n", entry.Path, err)
@@ -146,7 +149,7 @@ func (s *Service) Dump(ctx context.Context, out io.Writer, paths []string, opts 
 	}
 
 	var entries []scanner.Entry
-	for entry, err := range scanner.WalkPaths(ctx, paths, filter) {
+	for entry, err := range walkPathsFunc(ctx, paths, filter) {
 		if err != nil {
 			logger.ErrorContext(ctx, "dump scan error encountered", slog.String("path", entry.Path), slog.Any("error", err))
 			_, _ = fmt.Fprintf(out, "[ERROR] %s: %v\n", entry.Path, err)
@@ -160,10 +163,8 @@ func (s *Service) Dump(ctx context.Context, out io.Writer, paths []string, opts 
 		switch opts.Format {
 		case FormatXML:
 			return d.GenerateXML(ctx, entries, opts.Instructions, w)
-		case FormatMarkdown:
-			return d.GenerateMarkdown(ctx, entries, opts.Instructions, w)
 		default:
-			return fmt.Errorf("unsupported output format: %s", opts.Format)
+			return d.GenerateMarkdown(ctx, entries, opts.Instructions, w)
 		}
 	}
 

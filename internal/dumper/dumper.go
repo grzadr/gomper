@@ -16,6 +16,9 @@ import (
 	"github.com/grzadr/gomper/internal/scanner"
 )
 
+// Hook for opening files during streaming, allowing deterministic test error injection.
+var openFileHook = func(name string) (*os.File, error) { return os.Open(name) }
+
 // XMLDumper generates XML context representations of codebases.
 type XMLDumper struct {
 	logger *slog.Logger
@@ -42,11 +45,7 @@ func EstimateTokens(content []byte) int {
 	if len(content) == 0 {
 		return 0
 	}
-	tokens := (len(content) + 3) / 4
-	if tokens < 1 {
-		return 1
-	}
-	return tokens
+	return (len(content) + 3) / 4
 }
 
 // FormatLineNumberedContent reads from r line by line, prepends 1-indexed line numbers ("1 | ..."),
@@ -234,7 +233,7 @@ func (d *XMLDumper) GenerateXML(ctx context.Context, entries []scanner.Entry, in
 		}
 		_, _ = fmt.Fprintf(w, "  <file path=%q language=%q tokens=\"%d\">\n", meta.RelPath, meta.Lang, meta.Tokens)
 		err := func() error {
-			file, err := os.Open(meta.Path)
+			file, err := openFileHook(meta.Path)
 			if err != nil {
 				return err
 			}
@@ -307,7 +306,7 @@ func (d *XMLDumper) GenerateMarkdown(ctx context.Context, entries []scanner.Entr
 		_, _ = fmt.Fprintf(w, "- **Tokens**: %d\n\n", meta.Tokens)
 		_, _ = fmt.Fprintf(w, "```%s\n", meta.Lang)
 		err := func() error {
-			file, err := os.Open(meta.Path)
+			file, err := openFileHook(meta.Path)
 			if err != nil {
 				return err
 			}

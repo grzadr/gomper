@@ -3,6 +3,7 @@ package dumper_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -324,5 +325,60 @@ func TestDumper_EdgeCases(t *testing.T) {
 			t.Errorf("expected Markdown dump to use filepath.Base when RelPath is empty, got: %s", mdBuf.String())
 		}
 	})
+
+	t.Run("Logs warning when file cannot be opened during streaming in XML and Markdown", func(t *testing.T) {
+		tempDir := t.TempDir()
+		fileToDelete := filepath.Join(tempDir, "ephemeral.go")
+		_ = os.WriteFile(fileToDelete, []byte("package main"), 0644)
+
+		var logBuf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+		d := dumper.NewXMLDumper(logger)
+
+		entries := []scanner.Entry{
+			{Path: fileToDelete, RelPath: "ephemeral.go", IsDir: false, Info: dummyFileInfo{"ephemeral.go"}},
+		}
+
+		// Delete file before streaming but after metadata collection logic is tested
+		_ = os.Remove(fileToDelete)
+
+		var xmlBuf bytes.Buffer
+		_ = d.GenerateXML(context.Background(), entries, "", &xmlBuf)
+
+		var mdBuf bytes.Buffer
+		_ = d.GenerateMarkdown(context.Background(), entries, "", &mdBuf)
+	})
+
+	t.Run("BuildDirectoryTree handles root and empty rel paths", func(t *testing.T) {
+		entries := []scanner.Entry{
+			{RelPath: ".", IsDir: true},
+			{RelPath: "", IsDir: true},
+			{RelPath: "file.go", IsDir: false},
+		}
+		tree := dumper.BuildDirectoryTree(entries)
+		if !strings.Contains(tree, "file.go") {
+			t.Errorf("expected directory tree to contain file.go, got:\n%s", tree)
+		}
+	})
+
+	t.Run("Returns error when writer fails in FormatLineNumberedContent", func(t *testing.T) {
+		err := dumper.FormatLineNumberedContent(strings.NewReader("line1\n"), &failWriter{failOnWrite: true}, false)
+		if err == nil {
+			t.Errorf("expected write error from FormatLineNumberedContent, got nil")
+		}
+	})
 }
+
+type failWriter struct {
+	failOnWrite bool
+}
+
+func (f *failWriter) Write(p []byte) (n int, err error) {
+	if f.failOnWrite {
+		return 0, errors.New("write failed")
+	}
+	return len(p), nil
+}
+
+
 

@@ -39,7 +39,7 @@ check-coverage: test-coverage
 	@echo "Verifying test coverage is at least $(MIN_COVERAGE)%..."
 	@go tool cover -func=$(COVERAGE_FILE) | awk -v min=$(MIN_COVERAGE) '/total:/ { \
 		sub("%", "", $$3); \
-		if ($$3 < min) { \
+		if (($$3 + 0) < (min + 0)) { \
 			print "ERROR: Test coverage (" $$3 "%) is below required threshold (" min "%)."; \
 			exit 1; \
 		} else { \

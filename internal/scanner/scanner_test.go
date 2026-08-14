@@ -20,6 +20,24 @@ func TestNewFilter_EdgeCases(t *testing.T) {
 	if err != nil || filterEmpty != nil {
 		t.Fatalf("expected nil filter for empty patterns, got filter=%v, err=%v", filterEmpty, err)
 	}
+
+	filterEmptyDirs, err := scanner.NewFilter(scanner.FilterOptions{
+		IgnoreDirs:   []string{"", "# comment"},
+		NamePatterns: []string{""},
+	})
+	if err != nil || filterEmptyDirs != nil {
+		t.Fatalf("expected nil filter for comments/empty dirs, got filter=%v, err=%v", filterEmptyDirs, err)
+	}
+
+	_, err = scanner.NewFilter(scanner.FilterOptions{IgnorePatterns: []string{"(?<invalid"}})
+	if err == nil {
+		t.Errorf("expected error for invalid ignore pattern, got nil")
+	}
+
+	_, err = scanner.NewFilter(scanner.FilterOptions{NamePatterns: []string{"(?<invalid"}})
+	if err == nil {
+		t.Errorf("expected error for invalid name pattern, got nil")
+	}
 }
 
 func TestWalkPaths_EdgeCases(t *testing.T) {
@@ -133,6 +151,30 @@ func TestWalkPaths_EdgeCases(t *testing.T) {
 			if err != nil {
 				break
 			}
+		}
+	})
+
+	t.Run("Aborts across multiple root paths on canceled context", func(t *testing.T) {
+		tempDir := t.TempDir()
+		d1 := filepath.Join(tempDir, "d1")
+		d2 := filepath.Join(tempDir, "d2")
+		_ = os.Mkdir(d1, 0755)
+		_ = os.Mkdir(d2, 0755)
+		_ = os.WriteFile(filepath.Join(d1, "a.txt"), []byte("a"), 0644)
+		_ = os.WriteFile(filepath.Join(d2, "b.txt"), []byte("b"), 0644)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var seen []string
+		for entry, err := range scanner.WalkPaths(ctx, []string{d1, d2}, nil) {
+			if err == nil {
+				seen = append(seen, entry.RelPath)
+				cancel()
+			}
+		}
+
+		if len(seen) == 0 {
+			t.Errorf("expected at least 1 entry seen before cancel")
 		}
 	})
 }
@@ -560,6 +602,37 @@ func TestFilter_EvaluationSequence(t *testing.T) {
 	// main.go passes step 1, step 2, step 3 (matches name filter), step 4 (not ignored) -> kept
 	if filter.ShouldIgnore("main.go", "src/main.go", false) {
 		t.Errorf("expected main.go to NOT be ignored")
+	}
+}
+
+func TestFilter_ShouldIgnore_Direct(t *testing.T) {
+	var nilFilter *scanner.Filter
+	if nilFilter.ShouldIgnore("foo.go", "foo.go") {
+		t.Errorf("expected nil filter to return false")
+	}
+
+	filter, err := scanner.NewFilter(scanner.FilterOptions{
+		IgnoreDirs:     []string{"sub/nested"},
+		IgnorePatterns: []string{"dir/.*\\.txt$"},
+		IgnoreDotfiles: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected filter error: %v", err)
+	}
+
+	// Match on slashRel for directory
+	if !filter.ShouldIgnore("nested", "sub/nested", true) {
+		t.Errorf("expected ShouldIgnore to match dirRegexes against slashRel")
+	}
+
+	// Match on slashRel for ignore pattern
+	if !filter.ShouldIgnore("notes.txt", "dir/notes.txt", false) {
+		t.Errorf("expected ShouldIgnore to match regexes against slashRel")
+	}
+
+	// Dotfile matching on baseName of slashRel
+	if !filter.ShouldIgnore("file", "parent/.hiddenfile", false) {
+		t.Errorf("expected ShouldIgnore to match dotfile on baseName of slashRel")
 	}
 }
 

@@ -7,13 +7,16 @@ import (
 	"github.com/grzadr/gomper/internal/scanner"
 )
 
+// Hook for listing profiles, allowing error injection in unit tests.
+var listProfilesFunc = scanner.ListProfiles
+
 // NewProfilesCommand creates the profiles subcommand to list available embedded ignore profiles.
 func NewProfilesCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "profiles",
 		Short: "List available embedded gitignore profiles",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			profiles, err := scanner.ListProfiles()
+			profiles, err := listProfilesFunc()
 			if err != nil {
 				return err
 			}

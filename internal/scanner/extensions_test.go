@@ -26,6 +26,30 @@ func TestLookupLanguage(t *testing.T) {
 			expectedKnown: true,
 		},
 		{
+			name:         "Known Terraform tf extension",
+			path:         "infra/main.tf",
+			expectedLang: "terraform",
+			expectedKnown: true,
+		},
+		{
+			name:         "Known Terraform tfvars extension",
+			path:         "infra/terraform.tfvars",
+			expectedLang: "terraform",
+			expectedKnown: true,
+		},
+		{
+			name:         "Known Terraform tftpl extension",
+			path:         "templates/userdata.tftpl",
+			expectedLang: "terraform",
+			expectedKnown: true,
+		},
+		{
+			name:         "Known HCL extension",
+			path:         "terragrunt.hcl",
+			expectedLang: "hcl",
+			expectedKnown: true,
+		},
+		{
 			name:         "Known special filename Makefile",
 			path:         "Makefile",
 			expectedLang: "makefile",
@@ -63,3 +87,56 @@ func TestLookupLanguage(t *testing.T) {
 		})
 	}
 }
+
+func TestListFormats(t *testing.T) {
+	exts, specials, err := scanner.ListFormats()
+	if err != nil {
+		t.Fatalf("unexpected error from ListFormats: %v", err)
+	}
+
+	if len(exts) != len(scanner.SupportedExtensions) {
+		t.Errorf("expected %d extensions, got %d", len(scanner.SupportedExtensions), len(exts))
+	}
+
+	if len(specials) != len(scanner.SpecialFilenames) {
+		t.Errorf("expected %d special filenames, got %d", len(scanner.SpecialFilenames), len(specials))
+	}
+
+	// Verify sorting of extensions
+	for i := 1; i < len(exts); i++ {
+		if exts[i-1].Extension >= exts[i].Extension {
+			t.Errorf("extensions not sorted: %s >= %s", exts[i-1].Extension, exts[i].Extension)
+		}
+	}
+
+	// Verify sorting of specials
+	for i := 1; i < len(specials); i++ {
+		if specials[i-1].Filename >= specials[i].Filename {
+			t.Errorf("specials not sorted: %s >= %s", specials[i-1].Filename, specials[i].Filename)
+		}
+	}
+
+	// Verify known mappings exist
+	foundGo := false
+	for _, ext := range exts {
+		if ext.Extension == ".go" && ext.Language == "go" {
+			foundGo = true
+			break
+		}
+	}
+	if !foundGo {
+		t.Errorf("expected .go extension to be mapped to go")
+	}
+
+	foundMakefile := false
+	for _, spec := range specials {
+		if spec.Filename == "makefile" && spec.Language == "makefile" {
+			foundMakefile = true
+			break
+		}
+	}
+	if !foundMakefile {
+		t.Errorf("expected makefile special filename to be mapped to makefile")
+	}
+}
+

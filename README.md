@@ -13,7 +13,7 @@ Built with **Go 1.26 range-over-function iterators (`iter.Seq2`)**, Cobra, and V
 ## Features
 
 - **Range-Over-Function Iteration**: Memory-efficient directory traversal using Go 1.26 native `iter.Seq2[Entry, error]` iterators.
-- **Embedded Gitignore Profiles**: Preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`) embedded into the binary with `//go:embed`.
+- **Embedded Gitignore Profiles**: Preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`, `terraform`) embedded into the binary with `//go:embed`.
 - **File Name & Regex Filtering**: Filter files matching custom regular expressions against their whole base file name (`-n` / `--name`), exclude files/directories with custom ignore rules (`-i` / `--ignore`), ignore directories (`-D` / `--ignore-dir`), or hide dotfiles (`-d` / `--ignore-dotfiles`). Filtering is strictly evaluated in 4 steps: 1. ignore dotfiles, 2. ignore directories, 3. name filter, 4. ignore patterns.
 - **Atomic File Output**: Transactional file writing via `internal/filetx` using temporary files, fsync, and parent directory sync to prevent partial writes.
 - **Token Estimation & Line Numbering**: Automatic token estimation (~4 chars per token) and line numbering (`1 | content...`) tailored for LLM context consumption.
@@ -21,6 +21,7 @@ Built with **Go 1.26 range-over-function iterators (`iter.Seq2`)**, Cobra, and V
   - `list`: Inspect matching regular files with optional filtering (`-n`, `-i`, `-p`, `-d`, `-D`) and detailed attribute views (`-l`).
   - `dump`: Export directory structure into Markdown or XML formats (`-f`, `-o`, `-u` / `--instructions`).
   - `profiles`: Display available embedded language ignore templates.
+  - `formats`: Display supported file formats, extensions, and special filenames.
 - **YAML Configuration File**: Load target `paths`, `profiles`, `name_filter`, `ignore` patterns, `ignore_dir`, `ignore_dotfiles`, `instructions`, `format`, and `log_level` from `gomper.yaml`.
 - **Structured Logging**: Context-aware `log/slog` logger with dynamic level mutation (`slog.LevelVar`).
 - **Zero Global State Architecture**: Decoupled CLI transport logic (`cmd/`) and domain execution logic (`internal/app/`, `internal/dumper/`, `internal/filetx/`, `internal/scanner/`, `internal/setup/`).
@@ -74,6 +75,7 @@ List regular files within one or more paths (skipping directory nodes):
 #### Output
 ```
 dump.go
+formats.go
 list.go
 profiles.go
 root.go
@@ -94,7 +96,7 @@ root_test.go
   > 3. **Name filter** (`-n` / `--name`)
   > 4. **Ignore flag & profiles** (`-i` / `--ignore` / `--profile`)
 
-- **Language & Generic Ignore Profiles** (`-p`, `--profile`): Apply preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`). The `generic` profile automatically excludes environment files (`.env`, `.env.*`), OS metadata (`.DS_Store`, `Thumbs.db`), IDE configs (`.vscode/`, `.idea/`), and VCS metadata (`.git/`).
+- **Language & Generic Ignore Profiles** (`-p`, `--profile`): Apply preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`, `terraform`). The `generic` profile automatically excludes environment files (`.env`, `.env.*`), OS metadata (`.DS_Store`, `Thumbs.db`), IDE configs (`.vscode/`, `.idea/`), and VCS metadata (`.git/`).
   ```bash
   ./bin/gomper list . --profile generic --profile go
   ```
@@ -145,11 +147,97 @@ Available ignore profiles:
   - node
   - python
   - rust
+  - terraform
 ```
 
 ---
 
-### 3. Dump Directory Structure
+### 3. List Supported File Formats
+
+Display all recognized file extensions and special filenames:
+
+```bash
+./bin/gomper formats
+```
+
+#### Output
+```
+Supported file formats:
+  - .bash (bash)
+  - .c (c)
+  - .cc (cpp)
+  - .cfg (ini)
+  - .cjs (javascript)
+  - .cpp (cpp)
+  - .cs (csharp)
+  - .css (css)
+  - .csv (csv)
+  - .cxx (cpp)
+  - .dart (dart)
+  - .docker (dockerfile)
+  - .env (dotenv)
+  - .gitattributes (gitattributes)
+  - .gitignore (gitignore)
+  - .go (go)
+  - .h (cpp)
+  - .hcl (hcl)
+  - .hpp (cpp)
+  - .htm (html)
+  - .html (html)
+  - .ini (ini)
+  - .java (java)
+  - .js (javascript)
+  - .json (json)
+  - .jsx (javascript)
+  - .kt (kotlin)
+  - .kts (kotlin)
+  - .less (less)
+  - .log (text)
+  - .lua (lua)
+  - .make (makefile)
+  - .md (markdown)
+  - .mjs (javascript)
+  - .mod (go)
+  - .pdf (pdf)
+  - .php (php)
+  - .proto (protobuf)
+  - .ps1 (powershell)
+  - .py (python)
+  - .pyw (python)
+  - .r (r)
+  - .rb (ruby)
+  - .rs (rust)
+  - .rst (rst)
+  - .scala (scala)
+  - .scss (scss)
+  - .sh (bash)
+  - .sql (sql)
+  - .sum (text)
+  - .svg (xml)
+  - .swift (swift)
+  - .tf (terraform)
+  - .tftpl (terraform)
+  - .tfvars (terraform)
+  - .toml (toml)
+  - .ts (typescript)
+  - .tsx (typescript)
+  - .txt (text)
+  - .xml (xml)
+  - .yaml (yaml)
+  - .yml (yaml)
+  - .zsh (bash)
+
+Special filenames:
+  - cmakelists.txt (cmake)
+  - dockerfile (dockerfile)
+  - license (text)
+  - makefile (makefile)
+  - readme (markdown)
+```
+
+---
+
+### 4. Dump Directory Structure
 
 Export target directories into a single file or standard output:
 
@@ -233,6 +321,7 @@ When `paths` are specified in `gomper.yaml`, running `./bin/gomper list` or `./b
 gomper/
 ├── cmd/                # Cobra CLI subcommand factories (Zero global state)
 │   ├── dump.go         # Dump subcommand factory
+│   ├── formats.go      # Formats subcommand factory
 │   ├── list.go         # List subcommand factory
 │   ├── profiles.go     # Profiles subcommand factory
 │   ├── root.go         # Root command & Viper precedence setup

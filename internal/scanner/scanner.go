@@ -157,6 +157,9 @@ func (f *Filter) ShouldIgnore(name string, relPath string, isDir ...bool) bool {
 }
 
 
+// Hook for directory tree traversal, allowing unit test error injection.
+var walkDirFunc = filepath.WalkDir
+
 // WalkPaths returns an iter.Seq2[Entry, error] iterator (Go range-over-function)
 // that traverses all files and directories specified by paths, filtering out entries
 // that match any active ignore patterns in filter.
@@ -192,7 +195,7 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 			}
 
 			// Traverse directory tree
-			_ = filepath.WalkDir(cleanedRoot, func(path string, d fs.DirEntry, walkErr error) error {
+			_ = walkDirFunc(cleanedRoot, func(path string, d fs.DirEntry, walkErr error) error {
 				select {
 				case <-ctx.Done():
 					return ctx.Err()

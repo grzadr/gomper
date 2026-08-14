@@ -209,6 +209,39 @@ func TestCLI_ListCommand(t *testing.T) {
 		}
 	})
 
+	t.Run("Executes with embedded profile flag --profile terraform", func(t *testing.T) {
+		tempDir := t.TempDir()
+		tfFile := filepath.Join(tempDir, "main.tf")
+		stateFile := filepath.Join(tempDir, "terraform.tfstate")
+		varsFile := filepath.Join(tempDir, "secret.tfvars")
+		tfDir := filepath.Join(tempDir, ".terraform")
+		_ = os.Mkdir(tfDir, 0755)
+		_ = os.WriteFile(tfFile, []byte("resource \"null_resource\" \"x\" {}"), 0644)
+		_ = os.WriteFile(stateFile, []byte("{}"), 0644)
+		_ = os.WriteFile(varsFile, []byte("secret = 1"), 0644)
+		_ = os.WriteFile(filepath.Join(tfDir, "lock.hcl"), []byte(""), 0644)
+
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"list", tempDir, "--profile", "terraform"})
+		err := rootCmd.Execute()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := outBuf.String()
+		if strings.Contains(output, "terraform.tfstate") || strings.Contains(output, "secret.tfvars") || strings.Contains(output, ".terraform") {
+			t.Errorf("expected state, vars, and .terraform directory to be ignored by terraform profile, got output: %q", output)
+		}
+		if !strings.Contains(output, "main.tf") {
+			t.Errorf("expected main.tf to be listed, got output: %q", output)
+		}
+	})
+
 	t.Run("Fails cleanly when invalid profile is provided", func(t *testing.T) {
 		tempDir := t.TempDir()
 		rootCmd := cmd.NewRootCommand(nil)
@@ -348,6 +381,35 @@ func TestCLI_ProfilesCommand(t *testing.T) {
 		t.Errorf("expected available profiles output containing '- go', got: %q", output)
 	}
 }
+
+func TestCLI_FormatsCommand(t *testing.T) {
+	rootCmd := cmd.NewRootCommand(nil)
+	outBuf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	rootCmd.SetOut(outBuf)
+	rootCmd.SetErr(errBuf)
+
+	rootCmd.SetArgs([]string{"formats"})
+	err := rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error running formats subcommand: %v", err)
+	}
+
+	output := outBuf.String()
+	if !strings.Contains(output, "Supported file formats:") {
+		t.Errorf("expected formats output containing 'Supported file formats:', got: %q", output)
+	}
+	if !strings.Contains(output, "- .go (go)") {
+		t.Errorf("expected formats output containing '- .go (go)', got: %q", output)
+	}
+	if !strings.Contains(output, "Special filenames:") {
+		t.Errorf("expected formats output containing 'Special filenames:', got: %q", output)
+	}
+	if !strings.Contains(output, "- makefile (makefile)") {
+		t.Errorf("expected formats output containing '- makefile (makefile)', got: %q", output)
+	}
+}
+
 
 func TestCLI_DumpCommand(t *testing.T) {
 	t.Run("Requires at least one path argument or config path", func(t *testing.T) {

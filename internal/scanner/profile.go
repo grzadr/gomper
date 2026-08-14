@@ -10,9 +10,17 @@ import (
 //go:embed profiles/*.gitignore
 var embeddedProfilesFS embed.FS
 
+type profilesFileSystem interface {
+	fs.ReadDirFS
+	fs.ReadFileFS
+}
+
+// profilesFS holds the filesystem for embedded profiles, allowing test overrides.
+var profilesFS profilesFileSystem = embeddedProfilesFS
+
 // ListProfiles returns a slice of available embedded ignore profile names.
 func ListProfiles() ([]string, error) {
-	entries, err := fs.ReadDir(embeddedProfilesFS, "profiles")
+	entries, err := fs.ReadDir(profilesFS, "profiles")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read embedded profiles directory: %w", err)
 	}
@@ -32,7 +40,7 @@ func LoadProfilePatterns(profileName string) ([]string, error) {
 	cleanName := strings.ToLower(strings.TrimSpace(profileName))
 	filePath := "profiles/" + cleanName + ".gitignore"
 
-	data, err := embeddedProfilesFS.ReadFile(filePath)
+	data, err := profilesFS.ReadFile(filePath)
 	if err != nil {
 		available, _ := ListProfiles()
 		return nil, fmt.Errorf("unknown ignore profile %q (available profiles: %s)", profileName, strings.Join(available, ", "))

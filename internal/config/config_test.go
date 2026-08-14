@@ -38,3 +38,21 @@ func TestConfig_GetEffectiveIgnoreDirs(t *testing.T) {
 	}
 }
 
+func TestConfig_GetEffectiveNameFilters(t *testing.T) {
+	cfg := config.Config{
+		Name:        []string{`.*\.go$`},
+		NameFilter:  []string{`.*\.ts$`},
+		NameFilters: []string{`.*\.py$`},
+	}
+
+	effective := cfg.GetEffectiveNameFilters()
+	if len(effective) != 3 {
+		t.Fatalf("expected 3 name filters, got %d", len(effective))
+	}
+
+	if effective[0] != `.*\.go$` || effective[1] != `.*\.ts$` || effective[2] != `.*\.py$` {
+		t.Errorf("unexpected name filter slice: %v", effective)
+	}
+}
+
+

@@ -21,11 +21,67 @@ func TestListProfiles(t *testing.T) {
 		profileMap[p] = true
 	}
 
-	expectedProfiles := []string{"generic", "go", "node", "python", "java", "cpp", "rust"}
+	expectedProfiles := []string{"generic", "go", "node", "python", "java", "cpp", "rust", "terraform"}
 	for _, expected := range expectedProfiles {
 		if !profileMap[expected] {
 			t.Errorf("expected embedded profile %q, but not found in %v", expected, profiles)
 		}
+	}
+}
+
+func TestLoadProfilePatterns_Terraform(t *testing.T) {
+	patterns, err := scanner.LoadProfilePatterns("terraform")
+	if err != nil {
+		t.Fatalf("unexpected error loading 'terraform' profile: %v", err)
+	}
+
+	if len(patterns) == 0 {
+		t.Errorf("expected patterns for 'terraform' profile, got empty")
+	}
+
+	filter, err := scanner.NewFilter(scanner.FilterOptions{IgnorePatterns: patterns})
+	if err != nil {
+		t.Fatalf("failed to create filter from loaded patterns: %v", err)
+	}
+
+	if !filter.ShouldIgnore(".terraform", ".terraform") {
+		t.Errorf("expected 'terraform' profile to ignore .terraform")
+	}
+
+	if !filter.ShouldIgnore("terraform.tfstate", "terraform.tfstate") {
+		t.Errorf("expected 'terraform' profile to ignore terraform.tfstate")
+	}
+
+	if !filter.ShouldIgnore("terraform.tfstate.backup", "terraform.tfstate.backup") {
+		t.Errorf("expected 'terraform' profile to ignore terraform.tfstate.backup")
+	}
+
+	if !filter.ShouldIgnore("secret.tfvars", "secret.tfvars") {
+		t.Errorf("expected 'terraform' profile to ignore secret.tfvars")
+	}
+
+	if !filter.ShouldIgnore("secret.tfvars.json", "secret.tfvars.json") {
+		t.Errorf("expected 'terraform' profile to ignore secret.tfvars.json")
+	}
+
+	if !filter.ShouldIgnore("crash.log", "crash.log") {
+		t.Errorf("expected 'terraform' profile to ignore crash.log")
+	}
+
+	if !filter.ShouldIgnore("override.tf", "override.tf") {
+		t.Errorf("expected 'terraform' profile to ignore override.tf")
+	}
+
+	if !filter.ShouldIgnore("app_override.tf", "app_override.tf") {
+		t.Errorf("expected 'terraform' profile to ignore app_override.tf")
+	}
+
+	if filter.ShouldIgnore("main.tf", "main.tf") {
+		t.Errorf("expected 'terraform' profile NOT to ignore main.tf")
+	}
+
+	if filter.ShouldIgnore("variables.tf", "variables.tf") {
+		t.Errorf("expected 'terraform' profile NOT to ignore variables.tf")
 	}
 }
 

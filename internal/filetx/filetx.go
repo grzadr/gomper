@@ -12,6 +12,14 @@ import (
 	"syscall"
 )
 
+// File and directory operation hooks for deterministic error injection in unit tests.
+var (
+	syncFileHook  = func(f *os.File) error { return f.Sync() }
+	closeFileHook = func(f *os.File) error { return f.Close() }
+	openDirHook   = func(name string) (*os.File, error) { return os.Open(name) }
+	syncDirHook   = func(f *os.File) error { return f.Sync() }
+)
+
 // WriteAtomically writes content to targetPath in a fully atomic, transactional manner.
 // It creates a temporary file in targetPath's directory, streams data via writeFunc,
 // syncs the file, closes it, renames it atomically to targetPath, and syncs the parent directory.
@@ -48,11 +56,11 @@ func WriteAtomically(ctx context.Context, targetPath string, writeFunc func(ctx 
 		return err
 	}
 
-	if err = tmpFile.Sync(); err != nil {
+	if err = syncFileHook(tmpFile); err != nil {
 		return fmt.Errorf("failed to sync temporary file: %w", err)
 	}
 
-	if err = tmpFile.Close(); err != nil {
+	if err = closeFileHook(tmpFile); err != nil {
 		return fmt.Errorf("failed to close temporary file: %w", err)
 	}
 
@@ -60,7 +68,7 @@ func WriteAtomically(ctx context.Context, targetPath string, writeFunc func(ctx 
 		return fmt.Errorf("failed to rename temporary file to %s: %w", targetPath, err)
 	}
 
-	dirFile, err := os.Open(dir)
+	dirFile, err := openDirHook(dir)
 	if err != nil {
 		if isPermissionError(err) {
 			slog.WarnContext(ctx, "failed to open parent directory for sync due to insufficient permissions",
@@ -73,7 +81,7 @@ func WriteAtomically(ctx context.Context, targetPath string, writeFunc func(ctx 
 	}
 	defer func() { _ = dirFile.Close() }()
 
-	if err = dirFile.Sync(); err != nil {
+	if err = syncDirHook(dirFile); err != nil {
 		if isPermissionError(err) {
 			slog.WarnContext(ctx, "failed to sync parent directory due to insufficient permissions",
 				slog.String("directory", dir),
@@ -91,11 +99,5 @@ func isPermissionError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if os.IsPermission(err) || errors.Is(err, fs.ErrPermission) || errors.Is(err, os.ErrPermission) {
-		return true
-	}
-	if errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) {
-		return true
-	}
-	return false
+	return os.IsPermission(err) || errors.Is(err, fs.ErrPermission) || errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM)
 }

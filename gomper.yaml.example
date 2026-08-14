@@ -4,7 +4,7 @@
 paths:
   - .
 
-# Embedded ignore profiles to load (options: generic, go, node, python, java, cpp, rust)
+# Embedded ignore profiles to load (options: generic, go, node, python, java, cpp, rust, terraform)
 profiles:
   - generic
   - go
