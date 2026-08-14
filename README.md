@@ -24,7 +24,7 @@ Built with **Go 1.26 range-over-function iterators (`iter.Seq2`)**, Cobra, and V
   - `formats`: Display supported file formats, extensions, and special filenames.
 - **YAML Configuration File**: Load target `paths`, `profiles`, `name_filter`, `ignore` patterns, `ignore_dir`, `ignore_dotfiles`, `instructions`, `format`, and `log_level` from `gomper.yaml`.
 - **Version Resolution Flag (`-v` / `--version`)**: Automatic multi-tier version determination with 4-step fallback sequence: explicit `-ldflags`, `runtime/debug.ReadBuildInfo()` module version, VCS revision/modified metadata, and `"dev"` fallback.
-- **Zero Global State Architecture**: Decoupled CLI transport logic (`cmd/`) and domain execution logic (`internal/app/`, `internal/dumper/`, `internal/filetx/`, `internal/scanner/`, `internal/setup/`, `internal/version/`).
+- **Zero Global State Architecture**: Decoupled CLI transport logic (`cmd/`) and domain execution logic (`internal/app/`, `internal/dumper/`, `internal/filetx/`, `internal/scanner/`, `internal/setup/`).
 
 ---
 
