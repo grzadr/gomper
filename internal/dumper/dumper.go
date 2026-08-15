@@ -2,7 +2,6 @@ package dumper
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"html"
@@ -47,12 +46,12 @@ type FileMetadata struct {
 	Tokens  int
 }
 
-// EstimateTokens calculates an approximate token count for file content (~4 chars per token).
-func EstimateTokens(content []byte) int {
-	if len(content) == 0 {
+// EstimateTokens calculates an approximate token count from file byte size (~4 chars per token).
+func EstimateTokens(size int64) int {
+	if size <= 0 {
 		return 0
 	}
-	return (len(content) + 3) / 4
+	return int((size + 3) / 4)
 }
 
 // FormatLineNumberedContent reads from r line by line, prepends 1-indexed line numbers ("1 | ..."),
@@ -196,20 +195,12 @@ func (d *XMLDumper) dumpStream(ctx context.Context, seq iter.Seq2[scanner.Entry,
 			)
 		}
 
-		var contentBuf []byte
-		if entry.Content != nil {
-			buf, readErr := io.ReadAll(entry.Content)
-			if readErr != nil {
-				d.logger.WarnContext(ctx, "unable to read file content for dump",
-					slog.String("path", entry.Path),
-					slog.Any("error", readErr),
-				)
-				continue
-			}
-			contentBuf = buf
+		var size int64
+		if entry.Info != nil {
+			size = entry.Info.Size()
 		}
 
-		tokens := EstimateTokens(contentBuf)
+		tokens := EstimateTokens(size)
 		totalTokens += tokens
 
 		relPath := filepath.ToSlash(entry.RelPath)
@@ -227,8 +218,10 @@ func (d *XMLDumper) dumpStream(ctx context.Context, seq iter.Seq2[scanner.Entry,
 
 		if isXML {
 			_, _ = fmt.Fprintf(stagingFile, "  <file path=%q language=%q tokens=\"%d\">\n", meta.RelPath, meta.Lang, meta.Tokens)
-			if err := formatContentHook(bytes.NewReader(contentBuf), stagingFile, true); err != nil {
-				return err
+			if entry.Content != nil {
+				if err := formatContentHook(entry.Content, stagingFile, true); err != nil {
+					return err
+				}
 			}
 			_, _ = fmt.Fprintln(stagingFile, `  </file>`)
 		} else {
@@ -236,8 +229,10 @@ func (d *XMLDumper) dumpStream(ctx context.Context, seq iter.Seq2[scanner.Entry,
 			_, _ = fmt.Fprintf(stagingFile, "- **Language**: %s\n", meta.Lang)
 			_, _ = fmt.Fprintf(stagingFile, "- **Tokens**: %d\n\n", meta.Tokens)
 			_, _ = fmt.Fprintf(stagingFile, "```%s\n", meta.Lang)
-			if err := formatContentHook(bytes.NewReader(contentBuf), stagingFile, false); err != nil {
-				return err
+			if entry.Content != nil {
+				if err := formatContentHook(entry.Content, stagingFile, false); err != nil {
+					return err
+				}
 			}
 			_, _ = fmt.Fprintln(stagingFile, "```")
 			_, _ = fmt.Fprintln(stagingFile)

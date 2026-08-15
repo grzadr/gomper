@@ -18,10 +18,11 @@ import (
 
 type dummyFileInfo struct {
 	name string
+	size int64
 }
 
 func (d dummyFileInfo) Name() string       { return d.name }
-func (d dummyFileInfo) Size() int64        { return 100 }
+func (d dummyFileInfo) Size() int64        { return d.size }
 func (d dummyFileInfo) Mode() fs.FileMode  { return 0644 }
 func (d dummyFileInfo) ModTime() time.Time { return time.Now() }
 func (d dummyFileInfo) IsDir() bool        { return false }
@@ -39,22 +40,23 @@ func entriesToSeq(entries []scanner.Entry) iter.Seq2[scanner.Entry, error] {
 
 func TestEstimateTokens(t *testing.T) {
 	tests := []struct {
-		input []byte
-		want  int
+		size int64
+		want int
 	}{
-		{nil, 0},
-		{[]byte{}, 0},
-		{[]byte("a"), 1},
-		{[]byte("ab"), 1},
-		{[]byte("abc"), 1},
-		{[]byte("abcd"), 1},
-		{[]byte("abcde"), 2},
-		{[]byte("12345678"), 2},
+		{-10, 0},
+		{0, 0},
+		{1, 1},
+		{2, 1},
+		{3, 1},
+		{4, 1},
+		{5, 2},
+		{8, 2},
+		{100, 25},
 	}
 
 	for _, tt := range tests {
-		if got := dumper.EstimateTokens(tt.input); got != tt.want {
-			t.Errorf("EstimateTokens(%q) = %d, want %d", string(tt.input), got, tt.want)
+		if got := dumper.EstimateTokens(tt.size); got != tt.want {
+			t.Errorf("EstimateTokens(%d) = %d, want %d", tt.size, got, tt.want)
 		}
 	}
 }
@@ -145,10 +147,13 @@ func TestGenerateXML(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 	xmlDumper := dumper.NewXMLDumper(logger)
 
+	mainContent := "package main\n\nfunc main() {}\n"
+	customContent := "custom content\n"
+
 	entries := []scanner.Entry{
-		{Path: "root", RelPath: ".", IsDir: true, Info: dummyFileInfo{"."}},
-		{Path: "main.go", RelPath: "main.go", IsDir: false, Info: dummyFileInfo{"main.go"}, Content: io.NopCloser(strings.NewReader("package main\n\nfunc main() {}\n"))},
-		{Path: "data.unknownext", RelPath: "data.unknownext", IsDir: false, Info: dummyFileInfo{"data.unknownext"}, Content: io.NopCloser(strings.NewReader("custom content\n"))},
+		{Path: "root", RelPath: ".", IsDir: true, Info: dummyFileInfo{name: ".", size: 0}},
+		{Path: "main.go", RelPath: "main.go", IsDir: false, Info: dummyFileInfo{name: "main.go", size: int64(len(mainContent))}, Content: io.NopCloser(strings.NewReader(mainContent))},
+		{Path: "data.unknownext", RelPath: "data.unknownext", IsDir: false, Info: dummyFileInfo{name: "data.unknownext", size: int64(len(customContent))}, Content: io.NopCloser(strings.NewReader(customContent))},
 	}
 
 	var xmlBuf bytes.Buffer
@@ -188,9 +193,11 @@ func TestGenerateMarkdown(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 	xmlDumper := dumper.NewXMLDumper(logger)
 
+	mainContent := "package main\n\nfunc main() {}\n"
+
 	entries := []scanner.Entry{
-		{Path: "root", RelPath: ".", IsDir: true, Info: dummyFileInfo{"."}},
-		{Path: "main.go", RelPath: "main.go", IsDir: false, Info: dummyFileInfo{"main.go"}, Content: io.NopCloser(strings.NewReader("package main\n\nfunc main() {}\n"))},
+		{Path: "root", RelPath: ".", IsDir: true, Info: dummyFileInfo{name: ".", size: 0}},
+		{Path: "main.go", RelPath: "main.go", IsDir: false, Info: dummyFileInfo{name: "main.go", size: int64(len(mainContent))}, Content: io.NopCloser(strings.NewReader(mainContent))},
 	}
 
 	var mdBuf bytes.Buffer
@@ -236,29 +243,43 @@ func (errReadCloser) Close() error {
 }
 
 func TestDumper_EdgeCases(t *testing.T) {
-	t.Run("Logs warning when entry.Content returns read error", func(t *testing.T) {
-		var logBuf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
-		d := dumper.NewXMLDumper(logger)
+	t.Run("Returns error when entry.Content returns read error during streaming", func(t *testing.T) {
+		d := dumper.NewXMLDumper(nil)
 
 		entries := []scanner.Entry{
-			{Path: "bad.txt", RelPath: "bad.txt", IsDir: false, Info: dummyFileInfo{"bad.txt"}, Content: errReadCloser{}},
-			{Path: "data.unknown", RelPath: "data.unknown", IsDir: false, Info: dummyFileInfo{"data.unknown"}, Content: io.NopCloser(strings.NewReader("data"))},
+			{Path: "bad.txt", RelPath: "bad.txt", IsDir: false, Info: dummyFileInfo{name: "bad.txt", size: 100}, Content: errReadCloser{}},
+		}
+
+		var xmlBuf bytes.Buffer
+		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", &xmlBuf)
+		if err == nil || !strings.Contains(err.Error(), "simulated read error") {
+			t.Errorf("expected streaming read error in GenerateXML, got: %v", err)
+		}
+
+		var mdBuf bytes.Buffer
+		err = d.GenerateMarkdown(context.Background(), entriesToSeq(entries), "", &mdBuf)
+		if err == nil || !strings.Contains(err.Error(), "simulated read error") {
+			t.Errorf("expected streaming read error in GenerateMarkdown, got: %v", err)
+		}
+	})
+
+	t.Run("Handles nil Content gracefully in XML and Markdown", func(t *testing.T) {
+		d := dumper.NewXMLDumper(nil)
+
+		entries := []scanner.Entry{
+			{Path: "empty.txt", RelPath: "empty.txt", IsDir: false, Info: nil, Content: nil},
 		}
 
 		var xmlBuf bytes.Buffer
 		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", &xmlBuf)
 		if err != nil {
-			t.Fatalf("unexpected GenerateXML error: %v", err)
-		}
-		if !strings.Contains(logBuf.String(), "unable to read file content for dump") {
-			t.Errorf("expected read error warning in log, got: %s", logBuf.String())
+			t.Fatalf("unexpected error with nil Content: %v", err)
 		}
 
 		var mdBuf bytes.Buffer
 		err = d.GenerateMarkdown(context.Background(), entriesToSeq(entries), "", &mdBuf)
 		if err != nil {
-			t.Fatalf("unexpected GenerateMarkdown error: %v", err)
+			t.Fatalf("unexpected error with nil Content: %v", err)
 		}
 		if !strings.Contains(mdBuf.String(), "User Instructions\nNone") {
 			t.Errorf("expected 'None' under User Instructions when empty")
@@ -271,7 +292,7 @@ func TestDumper_EdgeCases(t *testing.T) {
 
 		d := dumper.NewXMLDumper(nil)
 		entries := []scanner.Entry{
-			{Path: "test.go", RelPath: "test.go", IsDir: false, Info: dummyFileInfo{"test.go"}, Content: io.NopCloser(strings.NewReader("content"))},
+			{Path: "test.go", RelPath: "test.go", IsDir: false, Info: dummyFileInfo{name: "test.go", size: 10}, Content: io.NopCloser(strings.NewReader("content"))},
 		}
 
 		var buf bytes.Buffer
@@ -286,7 +307,7 @@ func TestDumper_EdgeCases(t *testing.T) {
 	t.Run("Falls back to filepath.Base when RelPath is empty in XML and Markdown", func(t *testing.T) {
 		d := dumper.NewXMLDumper(nil)
 		entries := []scanner.Entry{
-			{Path: "/some/path/standalone.go", RelPath: "", IsDir: false, Info: dummyFileInfo{"standalone.go"}, Content: io.NopCloser(strings.NewReader("package main"))},
+			{Path: "/some/path/standalone.go", RelPath: "", IsDir: false, Info: dummyFileInfo{name: "standalone.go", size: 12}, Content: io.NopCloser(strings.NewReader("package main"))},
 		}
 
 		var xmlBuf bytes.Buffer
