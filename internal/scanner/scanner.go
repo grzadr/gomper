@@ -181,6 +181,18 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 				if filter.ShouldIgnore(info.Name(), filepath.Base(cleanedRoot), false) {
 					continue
 				}
+
+				isBin, binErr := IsBinaryFile(cleanedRoot)
+				if binErr != nil {
+					if !yield(Entry{Path: cleanedRoot, Root: cleanedRoot}, binErr) {
+						return
+					}
+					continue
+				}
+				if isBin {
+					continue
+				}
+
 				entry := Entry{
 					Path:    cleanedRoot,
 					RelPath: filepath.Base(cleanedRoot),
@@ -220,6 +232,19 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 						return filepath.SkipDir
 					}
 					return nil
+				}
+
+				if !d.IsDir() {
+					isBin, binErr := IsBinaryFile(path)
+					if binErr != nil {
+						if !yield(Entry{Path: path, Root: cleanedRoot}, binErr) {
+							return fs.SkipAll
+						}
+						return nil
+					}
+					if isBin {
+						return nil
+					}
 				}
 
 				fileInfo, err := d.Info()

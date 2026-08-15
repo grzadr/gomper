@@ -11,11 +11,12 @@ import (
 )
 
 type errorDirEntry struct {
-	name string
+	name  string
+	isDir bool
 }
 
 func (e errorDirEntry) Name() string               { return e.name }
-func (e errorDirEntry) IsDir() bool                { return false }
+func (e errorDirEntry) IsDir() bool                { return e.isDir }
 func (e errorDirEntry) Type() fs.FileMode          { return 0644 }
 func (e errorDirEntry) Info() (fs.FileInfo, error) { return nil, errors.New("simulated file info error") }
 
@@ -27,7 +28,7 @@ func TestWalkPaths_InternalWalkDirErrors(t *testing.T) {
 
 	t.Run("d.Info() error with yield returning true", func(t *testing.T) {
 		walkDirFunc = func(root string, fn fs.WalkDirFunc) error {
-			return fn(filepath.Join(root, "bad_info.txt"), errorDirEntry{name: "bad_info.txt"}, nil)
+			return fn(filepath.Join(root, "bad_info_dir"), errorDirEntry{name: "bad_info_dir", isDir: true}, nil)
 		}
 
 		ctx := context.Background()
@@ -45,10 +46,10 @@ func TestWalkPaths_InternalWalkDirErrors(t *testing.T) {
 
 	t.Run("d.Info() error with yield returning false breaks early", func(t *testing.T) {
 		walkDirFunc = func(root string, fn fs.WalkDirFunc) error {
-			if err := fn(filepath.Join(root, "bad_info1.txt"), errorDirEntry{name: "bad_info1.txt"}, nil); err != nil {
+			if err := fn(filepath.Join(root, "bad_info1"), errorDirEntry{name: "bad_info1", isDir: true}, nil); err != nil {
 				return err
 			}
-			return fn(filepath.Join(root, "bad_info2.txt"), errorDirEntry{name: "bad_info2.txt"}, nil)
+			return fn(filepath.Join(root, "bad_info2"), errorDirEntry{name: "bad_info2", isDir: true}, nil)
 		}
 
 		ctx := context.Background()
@@ -85,9 +86,12 @@ func TestWalkPaths_InternalWalkDirErrors(t *testing.T) {
 	})
 
 	t.Run("filepath.Rel failure falls back to path", func(t *testing.T) {
+		realFile := filepath.Join(tempDir, "file.txt")
+		_ = os.WriteFile(realFile, []byte("valid text"), 0644)
+
 		walkDirFunc = func(root string, fn fs.WalkDirFunc) error {
-			// root is relative ("rel/dir"), path is absolute ("/abs/file.txt") -> filepath.Rel fails!
-			return fn("/abs/file.txt", dummyDirEntry{name: "file.txt"}, nil)
+			// root is relative ("rel/dir"), path is absolute -> filepath.Rel fails!
+			return fn(realFile, dummyDirEntry{name: "file.txt"}, nil)
 		}
 
 		// Create relative dir in working directory
@@ -106,7 +110,7 @@ func TestWalkPaths_InternalWalkDirErrors(t *testing.T) {
 			}
 		}
 
-		if seenPath != "/abs/file.txt" {
+		if seenPath != realFile {
 			t.Errorf("expected fallback to path on filepath.Rel error, got: %q", seenPath)
 		}
 	})
