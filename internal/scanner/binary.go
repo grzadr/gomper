@@ -31,29 +31,83 @@ func IsBinaryReader(r io.Reader) (bool, error) {
 		return true, nil
 	}
 
-	if utf8.Valid(data) {
-		return false, nil
-	}
-
 	// If buffer was fully saturated, handle potential truncated multi-byte UTF-8 rune at boundary
 	if n == sniffBufferSize {
 		for i := 1; i <= 3 && i <= n; i++ {
-			if utf8.Valid(data[:n-i]) {
-				return false, nil
+			if (data[n-i] & 0xC0) == 0xC0 {
+				expectedLen := 2
+				if (data[n-i] & 0xE0) == 0xE0 {
+					expectedLen = 3
+				}
+				if (data[n-i] & 0xF0) == 0xF0 {
+					expectedLen = 4
+				}
+				if i < expectedLen {
+					data = data[:n-i]
+				}
+				break
 			}
 		}
 	}
 
-	return true, nil
+	return !utf8.Valid(data), nil
 }
 
-// IsBinaryFile checks if the target file at path contains binary data.
-func IsBinaryFile(path string) (bool, error) {
+// OpenAndSniff opens a file, reads up to 8KB to detect binary data.
+// If it is text, it returns a reconstituted io.ReadCloser combining sniffed bytes and remaining file content.
+func OpenAndSniff(path string) (bool, io.ReadCloser, error) {
 	file, err := openBinaryFileHook(path)
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
-	defer func() { _ = file.Close() }()
 
-	return IsBinaryReader(file)
+	buf := make([]byte, sniffBufferSize)
+	n, err := io.ReadFull(file, buf)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		_ = file.Close()
+		return false, nil, err
+	}
+
+	if n == 0 {
+		return false, file, nil
+	}
+
+	data := buf[:n]
+	if bytes.IndexByte(data, 0) != -1 {
+		_ = file.Close()
+		return true, nil, nil
+	}
+
+	validData := data
+	if n == sniffBufferSize {
+		for i := 1; i <= 3 && i <= n; i++ {
+			if (validData[n-i] & 0xC0) == 0xC0 {
+				expectedLen := 2
+				if (validData[n-i] & 0xE0) == 0xE0 {
+					expectedLen = 3
+				}
+				if (validData[n-i] & 0xF0) == 0xF0 {
+					expectedLen = 4
+				}
+				if i < expectedLen {
+					validData = validData[:n-i]
+				}
+				break
+			}
+		}
+	}
+
+	if !utf8.Valid(validData) {
+		_ = file.Close()
+		return true, nil, nil
+	}
+
+	// Reconstitute the file stream: sniffed bytes + remaining unread file bytes
+	mr := io.MultiReader(bytes.NewReader(data), file)
+	rc := struct {
+		io.Reader
+		io.Closer
+	}{mr, file}
+
+	return false, rc, nil
 }

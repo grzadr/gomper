@@ -91,4 +91,38 @@ func TestWalkPaths_BinaryHookErrors(t *testing.T) {
 			t.Errorf("expected exactly 1 error on early break, got %d", errCount)
 		}
 	})
+
+	t.Run("Directory walk directory entry yield returning false breaks walk immediately", func(t *testing.T) {
+		openBinaryFileHook = origHook
+
+		subDir := filepath.Join(tempDir, "sub1")
+		_ = os.Mkdir(subDir, 0755)
+		_ = os.WriteFile(filepath.Join(subDir, "f.txt"), []byte("data"), 0644)
+
+		ctx := context.Background()
+		var count int
+		for entry, err := range WalkPaths(ctx, []string{tempDir}, nil) {
+			if err == nil {
+				count++
+				if entry.IsDir {
+					break // break on first directory entry
+				}
+			}
+		}
+
+		if count != 1 {
+			t.Errorf("expected early break on directory yield to stop iteration at count 1, got %d", count)
+		}
+	})
+
+	t.Run("OpenAndSniff returns error on unreadable directory file descriptor", func(t *testing.T) {
+		openBinaryFileHook = origHook
+		isBin, rc, err := OpenAndSniff(tempDir)
+		if err == nil {
+			if rc != nil {
+				_ = rc.Close()
+			}
+			t.Fatalf("expected read error when sniffing directory as file, got isBin=%v", isBin)
+		}
+	})
 }

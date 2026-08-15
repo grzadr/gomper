@@ -148,23 +148,14 @@ func (s *Service) Dump(ctx context.Context, out io.Writer, paths []string, opts 
 		return err
 	}
 
-	var entries []scanner.Entry
-	for entry, err := range walkPathsFunc(ctx, paths, filter) {
-		if err != nil {
-			logger.ErrorContext(ctx, "dump scan error encountered", slog.String("path", entry.Path), slog.Any("error", err))
-			_, _ = fmt.Fprintf(out, "[ERROR] %s: %v\n", entry.Path, err)
-			continue
-		}
-		entries = append(entries, entry)
-	}
-
 	writeFunc := func(ctx context.Context, w io.Writer) error {
 		d := dumper.NewXMLDumper(logger)
+		seq := walkPathsFunc(ctx, paths, filter)
 		switch opts.Format {
 		case FormatXML:
-			return d.GenerateXML(ctx, entries, opts.Instructions, w)
+			return d.GenerateXML(ctx, seq, opts.Instructions, w)
 		default:
-			return d.GenerateMarkdown(ctx, entries, opts.Instructions, w)
+			return d.GenerateMarkdown(ctx, seq, opts.Instructions, w)
 		}
 	}
 
