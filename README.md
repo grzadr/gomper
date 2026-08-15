@@ -13,6 +13,7 @@ Built with **Go 1.26 range-over-function iterators (`iter.Seq2`)**, Cobra, and V
 ## Features
 
 - **Range-Over-Function Iteration**: Memory-efficient directory traversal using Go 1.26 native `iter.Seq2[Entry, error]` iterators.
+- **Implicit Binary File Exclusion**: Automatically detects and ignores binary files across all operations (`list` and `dump`) using bounded 8KB content sniffing (Git NUL-byte and UTF-8 sequence heuristics) without requiring flags or configuration.
 - **Embedded Gitignore Profiles**: Preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`, `terraform`) embedded into the binary with `//go:embed`.
 - **File Name & Regex Filtering**: Filter files matching custom regular expressions against their whole base file name (`-n` / `--name`), exclude files/directories with custom ignore rules (`-i` / `--ignore`), ignore directories (`-D` / `--ignore-dir`), or hide dotfiles (`-d` / `--ignore-dotfiles`). Filtering is strictly evaluated in 4 steps: 1. ignore dotfiles, 2. ignore directories, 3. name filter, 4. ignore patterns.
 - **Atomic File Output**: Transactional file writing via `internal/filetx` using temporary files, fsync, and parent directory sync to prevent partial writes.
@@ -66,7 +67,7 @@ make clean
 
 ### 1. List Files in Directories
 
-List regular files within one or more paths (skipping directory nodes):
+List regular files within one or more paths (skipping directory nodes and implicitly ignoring binary files):
 
 ```bash
 ./bin/gomper list ./cmd
@@ -239,7 +240,7 @@ Special filenames:
 
 ### 4. Dump Directory Structure
 
-Export target directories into a single file or standard output:
+Export target directories into a single file or standard output (binary files are automatically detected and omitted from both the directory tree and file contents):
 
 #### Markdown Dump (Default)
 ```bash

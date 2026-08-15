@@ -360,6 +360,34 @@ func TestCLI_ListCommand(t *testing.T) {
 			t.Errorf("expected main.go to be listed, got: %q", output)
 		}
 	})
+
+	t.Run("Implicitly ignores binary files in list command", func(t *testing.T) {
+		tempDir := t.TempDir()
+		textFile := filepath.Join(tempDir, "script.py")
+		binFile := filepath.Join(tempDir, "executable")
+
+		_ = os.WriteFile(textFile, []byte("print('hello')\n"), 0644)
+		_ = os.WriteFile(binFile, []byte{0x7f, 'E', 'L', 'F', 0x00, 0x00, 0x01}, 0755)
+
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+		rootCmd.SetArgs([]string{"list", tempDir})
+
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error running list: %v", err)
+		}
+
+		output := outBuf.String()
+		if !strings.Contains(output, "script.py") {
+			t.Errorf("expected script.py to be listed, got: %q", output)
+		}
+		if strings.Contains(output, "executable") {
+			t.Errorf("expected binary file 'executable' to be implicitly ignored, got: %q", output)
+		}
+	})
 }
 
 
@@ -523,6 +551,47 @@ func TestCLI_DumpCommand(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "failed to read configuration file") {
 			t.Errorf("expected config read error message, got: %v", err)
+		}
+	})
+
+	t.Run("Implicitly ignores binary files in markdown and xml dump", func(t *testing.T) {
+		tempDir := t.TempDir()
+		textFile := filepath.Join(tempDir, "main.go")
+		binFile := filepath.Join(tempDir, "binary_blob")
+
+		_ = os.WriteFile(textFile, []byte("package main\n\nfunc main() {}\n"), 0644)
+		_ = os.WriteFile(binFile, []byte{0x00, 0xff, 0xfe, 0x00}, 0755)
+
+		// Test Markdown Dump
+		mdCmd := cmd.NewRootCommand(nil)
+		mdOut := new(bytes.Buffer)
+		mdCmd.SetOut(mdOut)
+		mdCmd.SetArgs([]string{"dump", tempDir, "--format", "markdown"})
+		if err := mdCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error running markdown dump: %v", err)
+		}
+		mdResult := mdOut.String()
+		if !strings.Contains(mdResult, "main.go") {
+			t.Errorf("expected markdown dump to contain main.go")
+		}
+		if strings.Contains(mdResult, "binary_blob") {
+			t.Errorf("expected markdown dump to omit binary_blob")
+		}
+
+		// Test XML Dump
+		xmlCmd := cmd.NewRootCommand(nil)
+		xmlOut := new(bytes.Buffer)
+		xmlCmd.SetOut(xmlOut)
+		xmlCmd.SetArgs([]string{"dump", tempDir, "--format", "xml"})
+		if err := xmlCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error running xml dump: %v", err)
+		}
+		xmlResult := xmlOut.String()
+		if !strings.Contains(xmlResult, "main.go") {
+			t.Errorf("expected xml dump to contain main.go")
+		}
+		if strings.Contains(xmlResult, "binary_blob") {
+			t.Errorf("expected xml dump to omit binary_blob")
 		}
 	})
 }

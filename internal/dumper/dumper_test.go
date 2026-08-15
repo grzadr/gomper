@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"io/fs"
+	"iter"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,33 +18,45 @@ import (
 
 type dummyFileInfo struct {
 	name string
+	size int64
 }
 
 func (d dummyFileInfo) Name() string       { return d.name }
-func (d dummyFileInfo) Size() int64        { return 100 }
+func (d dummyFileInfo) Size() int64        { return d.size }
 func (d dummyFileInfo) Mode() fs.FileMode  { return 0644 }
 func (d dummyFileInfo) ModTime() time.Time { return time.Now() }
 func (d dummyFileInfo) IsDir() bool        { return false }
 func (d dummyFileInfo) Sys() any           { return nil }
 
+func entriesToSeq(entries []scanner.Entry) iter.Seq2[scanner.Entry, error] {
+	return func(yield func(scanner.Entry, error) bool) {
+		for _, e := range entries {
+			if !yield(e, nil) {
+				return
+			}
+		}
+	}
+}
+
 func TestEstimateTokens(t *testing.T) {
 	tests := []struct {
-		input []byte
-		want  int
+		size int64
+		want int
 	}{
-		{nil, 0},
-		{[]byte{}, 0},
-		{[]byte("a"), 1},
-		{[]byte("ab"), 1},
-		{[]byte("abc"), 1},
-		{[]byte("abcd"), 1},
-		{[]byte("abcde"), 2},
-		{[]byte("12345678"), 2},
+		{-10, 0},
+		{0, 0},
+		{1, 1},
+		{2, 1},
+		{3, 1},
+		{4, 1},
+		{5, 2},
+		{8, 2},
+		{100, 25},
 	}
 
 	for _, tt := range tests {
-		if got := dumper.EstimateTokens(tt.input); got != tt.want {
-			t.Errorf("EstimateTokens(%q) = %d, want %d", string(tt.input), got, tt.want)
+		if got := dumper.EstimateTokens(tt.size); got != tt.want {
+			t.Errorf("EstimateTokens(%d) = %d, want %d", tt.size, got, tt.want)
 		}
 	}
 }
@@ -131,26 +143,21 @@ func TestBuildDirectoryTree(t *testing.T) {
 }
 
 func TestGenerateXML(t *testing.T) {
-	tempDir := t.TempDir()
-
-	goFile := filepath.Join(tempDir, "main.go")
-	_ = os.WriteFile(goFile, []byte("package main\n\nfunc main() {}\n"), 0644)
-
-	customFile := filepath.Join(tempDir, "data.unknownext")
-	_ = os.WriteFile(customFile, []byte("custom content\n"), 0644)
-
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 	xmlDumper := dumper.NewXMLDumper(logger)
 
+	mainContent := "package main\n\nfunc main() {}\n"
+	customContent := "custom content\n"
+
 	entries := []scanner.Entry{
-		{Path: tempDir, RelPath: ".", IsDir: true, Info: dummyFileInfo{"."}},
-		{Path: goFile, RelPath: "main.go", IsDir: false, Info: dummyFileInfo{"main.go"}},
-		{Path: customFile, RelPath: "data.unknownext", IsDir: false, Info: dummyFileInfo{"data.unknownext"}},
+		{Path: "root", RelPath: ".", IsDir: true, Info: dummyFileInfo{name: ".", size: 0}},
+		{Path: "main.go", RelPath: "main.go", IsDir: false, Info: dummyFileInfo{name: "main.go", size: int64(len(mainContent))}, Content: io.NopCloser(strings.NewReader(mainContent))},
+		{Path: "data.unknownext", RelPath: "data.unknownext", IsDir: false, Info: dummyFileInfo{name: "data.unknownext", size: int64(len(customContent))}, Content: io.NopCloser(strings.NewReader(customContent))},
 	}
 
 	var xmlBuf bytes.Buffer
-	err := xmlDumper.GenerateXML(context.Background(), entries, "Refactor authentication", &xmlBuf)
+	err := xmlDumper.GenerateXML(context.Background(), entriesToSeq(entries), "Refactor authentication", &xmlBuf)
 	if err != nil {
 		t.Fatalf("unexpected GenerateXML error: %v", err)
 	}
@@ -182,22 +189,19 @@ func TestGenerateXML(t *testing.T) {
 }
 
 func TestGenerateMarkdown(t *testing.T) {
-	tempDir := t.TempDir()
-
-	goFile := filepath.Join(tempDir, "main.go")
-	_ = os.WriteFile(goFile, []byte("package main\n\nfunc main() {}\n"), 0644)
-
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 	xmlDumper := dumper.NewXMLDumper(logger)
 
+	mainContent := "package main\n\nfunc main() {}\n"
+
 	entries := []scanner.Entry{
-		{Path: tempDir, RelPath: ".", IsDir: true, Info: dummyFileInfo{"."}},
-		{Path: goFile, RelPath: "main.go", IsDir: false, Info: dummyFileInfo{"main.go"}},
+		{Path: "root", RelPath: ".", IsDir: true, Info: dummyFileInfo{name: ".", size: 0}},
+		{Path: "main.go", RelPath: "main.go", IsDir: false, Info: dummyFileInfo{name: "main.go", size: int64(len(mainContent))}, Content: io.NopCloser(strings.NewReader(mainContent))},
 	}
 
 	var mdBuf bytes.Buffer
-	err := xmlDumper.GenerateMarkdown(context.Background(), entries, "Update dependencies", &mdBuf)
+	err := xmlDumper.GenerateMarkdown(context.Background(), entriesToSeq(entries), "Update dependencies", &mdBuf)
 	if err != nil {
 		t.Fatalf("unexpected GenerateMarkdown error: %v", err)
 	}
@@ -228,51 +232,54 @@ func TestNewXMLDumper_NilLogger(t *testing.T) {
 	}
 }
 
+type errReadCloser struct{}
+
+func (errReadCloser) Read([]byte) (int, error) {
+	return 0, errors.New("simulated read error")
+}
+
+func (errReadCloser) Close() error {
+	return nil
+}
+
 func TestDumper_EdgeCases(t *testing.T) {
-	t.Run("Skips non-UTF8 binary file and unreadable file in XML and Markdown", func(t *testing.T) {
-		tempDir := t.TempDir()
-
-		// Non-UTF8 binary file
-		binaryFile := filepath.Join(tempDir, "bin.dat")
-		_ = os.WriteFile(binaryFile, []byte{0xff, 0xfe, 0xfd, 0x00}, 0644)
-
-		// Unreadable file
-		unreadableFile := filepath.Join(tempDir, "unreadable.txt")
-		if err := os.WriteFile(unreadableFile, []byte("secret"), 0000); err != nil {
-			t.Skip("skipping unreadable file test")
-		}
-		defer func() { _ = os.Chmod(unreadableFile, 0644) }()
-
-		// Unknown extension file for Markdown
-		unknownFile := filepath.Join(tempDir, "data.unknown")
-		_ = os.WriteFile(unknownFile, []byte("data"), 0644)
-
-		var logBuf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
-		d := dumper.NewXMLDumper(logger)
+	t.Run("Returns error when entry.Content returns read error during streaming", func(t *testing.T) {
+		d := dumper.NewXMLDumper(nil)
 
 		entries := []scanner.Entry{
-			{Path: binaryFile, RelPath: "", IsDir: false, Info: dummyFileInfo{"bin.dat"}},
-			{Path: unreadableFile, RelPath: "unreadable.txt", IsDir: false, Info: dummyFileInfo{"unreadable.txt"}},
-			{Path: unknownFile, RelPath: "data.unknown", IsDir: false, Info: dummyFileInfo{"data.unknown"}},
+			{Path: "bad.txt", RelPath: "bad.txt", IsDir: false, Info: dummyFileInfo{name: "bad.txt", size: 100}, Content: errReadCloser{}},
 		}
 
 		var xmlBuf bytes.Buffer
-		err := d.GenerateXML(context.Background(), entries, "", &xmlBuf)
-		if err != nil {
-			t.Fatalf("unexpected GenerateXML error: %v", err)
-		}
-		if strings.Contains(xmlBuf.String(), "<file path=\"bin.dat\"") || strings.Contains(xmlBuf.String(), "<file path=\"unreadable.txt\"") {
-			t.Errorf("expected binary and unreadable file content blocks to be omitted in XML dump, got: %s", xmlBuf.String())
+		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", &xmlBuf)
+		if err == nil || !strings.Contains(err.Error(), "simulated read error") {
+			t.Errorf("expected streaming read error in GenerateXML, got: %v", err)
 		}
 
 		var mdBuf bytes.Buffer
-		err = d.GenerateMarkdown(context.Background(), entries, "", &mdBuf)
-		if err != nil {
-			t.Fatalf("unexpected GenerateMarkdown error: %v", err)
+		err = d.GenerateMarkdown(context.Background(), entriesToSeq(entries), "", &mdBuf)
+		if err == nil || !strings.Contains(err.Error(), "simulated read error") {
+			t.Errorf("expected streaming read error in GenerateMarkdown, got: %v", err)
 		}
-		if strings.Contains(mdBuf.String(), "### File: `bin.dat`") || strings.Contains(mdBuf.String(), "### File: `unreadable.txt`") {
-			t.Errorf("expected binary and unreadable file content blocks to be omitted in Markdown dump, got: %s", mdBuf.String())
+	})
+
+	t.Run("Handles nil Content gracefully in XML and Markdown", func(t *testing.T) {
+		d := dumper.NewXMLDumper(nil)
+
+		entries := []scanner.Entry{
+			{Path: "empty.txt", RelPath: "empty.txt", IsDir: false, Info: nil, Content: nil},
+		}
+
+		var xmlBuf bytes.Buffer
+		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", &xmlBuf)
+		if err != nil {
+			t.Fatalf("unexpected error with nil Content: %v", err)
+		}
+
+		var mdBuf bytes.Buffer
+		err = d.GenerateMarkdown(context.Background(), entriesToSeq(entries), "", &mdBuf)
+		if err != nil {
+			t.Fatalf("unexpected error with nil Content: %v", err)
 		}
 		if !strings.Contains(mdBuf.String(), "User Instructions\nNone") {
 			t.Errorf("expected 'None' under User Instructions when empty")
@@ -285,30 +292,26 @@ func TestDumper_EdgeCases(t *testing.T) {
 
 		d := dumper.NewXMLDumper(nil)
 		entries := []scanner.Entry{
-			{Path: "test.go", RelPath: "test.go", IsDir: false, Info: dummyFileInfo{"test.go"}},
+			{Path: "test.go", RelPath: "test.go", IsDir: false, Info: dummyFileInfo{name: "test.go", size: 10}, Content: io.NopCloser(strings.NewReader("content"))},
 		}
 
 		var buf bytes.Buffer
-		if err := d.GenerateXML(ctx, entries, "", &buf); err == nil {
+		if err := d.GenerateXML(ctx, entriesToSeq(entries), "", &buf); err == nil {
 			t.Errorf("expected error on canceled context in GenerateXML")
 		}
-		if err := d.GenerateMarkdown(ctx, entries, "", &buf); err == nil {
+		if err := d.GenerateMarkdown(ctx, entriesToSeq(entries), "", &buf); err == nil {
 			t.Errorf("expected error on canceled context in GenerateMarkdown")
 		}
 	})
 
 	t.Run("Falls back to filepath.Base when RelPath is empty in XML and Markdown", func(t *testing.T) {
-		tempDir := t.TempDir()
-		sampleFile := filepath.Join(tempDir, "standalone.go")
-		_ = os.WriteFile(sampleFile, []byte("package main"), 0644)
-
 		d := dumper.NewXMLDumper(nil)
 		entries := []scanner.Entry{
-			{Path: sampleFile, RelPath: "", IsDir: false, Info: dummyFileInfo{"standalone.go"}},
+			{Path: "/some/path/standalone.go", RelPath: "", IsDir: false, Info: dummyFileInfo{name: "standalone.go", size: 12}, Content: io.NopCloser(strings.NewReader("package main"))},
 		}
 
 		var xmlBuf bytes.Buffer
-		err := d.GenerateXML(context.Background(), entries, "", &xmlBuf)
+		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", &xmlBuf)
 		if err != nil {
 			t.Fatalf("unexpected GenerateXML error: %v", err)
 		}
@@ -317,7 +320,7 @@ func TestDumper_EdgeCases(t *testing.T) {
 		}
 
 		var mdBuf bytes.Buffer
-		err = d.GenerateMarkdown(context.Background(), entries, "", &mdBuf)
+		err = d.GenerateMarkdown(context.Background(), entriesToSeq(entries), "", &mdBuf)
 		if err != nil {
 			t.Fatalf("unexpected GenerateMarkdown error: %v", err)
 		}
@@ -326,27 +329,23 @@ func TestDumper_EdgeCases(t *testing.T) {
 		}
 	})
 
-	t.Run("Logs warning when file cannot be opened during streaming in XML and Markdown", func(t *testing.T) {
-		tempDir := t.TempDir()
-		fileToDelete := filepath.Join(tempDir, "ephemeral.go")
-		_ = os.WriteFile(fileToDelete, []byte("package main"), 0644)
-
+	t.Run("Logs scan errors encountered during sequence traversal", func(t *testing.T) {
 		var logBuf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 		d := dumper.NewXMLDumper(logger)
 
-		entries := []scanner.Entry{
-			{Path: fileToDelete, RelPath: "ephemeral.go", IsDir: false, Info: dummyFileInfo{"ephemeral.go"}},
+		seqWithErr := func(yield func(scanner.Entry, error) bool) {
+			_ = yield(scanner.Entry{Path: "err_path"}, errors.New("simulated scan error"))
 		}
 
-		// Delete file before streaming but after metadata collection logic is tested
-		_ = os.Remove(fileToDelete)
-
 		var xmlBuf bytes.Buffer
-		_ = d.GenerateXML(context.Background(), entries, "", &xmlBuf)
-
-		var mdBuf bytes.Buffer
-		_ = d.GenerateMarkdown(context.Background(), entries, "", &mdBuf)
+		err := d.GenerateXML(context.Background(), seqWithErr, "", &xmlBuf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(logBuf.String(), "dump scan error encountered") {
+			t.Errorf("expected log output to record scan error, got: %s", logBuf.String())
+		}
 	})
 
 	t.Run("BuildDirectoryTree handles root and empty rel paths", func(t *testing.T) {
@@ -379,6 +378,3 @@ func (f *failWriter) Write(p []byte) (n int, err error) {
 	}
 	return len(p), nil
 }
-
-
-

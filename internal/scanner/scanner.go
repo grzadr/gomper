@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"iter"
 	"os"
@@ -19,6 +20,7 @@ type Entry struct {
 	Root    string
 	Info    fs.FileInfo
 	IsDir   bool
+	Content io.ReadCloser
 }
 
 // FilterOptions holds configuration options for building a Filter.
@@ -181,16 +183,31 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 				if filter.ShouldIgnore(info.Name(), filepath.Base(cleanedRoot), false) {
 					continue
 				}
+
+				isBin, rc, binErr := OpenAndSniff(cleanedRoot)
+				if binErr != nil {
+					if !yield(Entry{Path: cleanedRoot, Root: cleanedRoot}, binErr) {
+						return
+					}
+					continue
+				}
+				if isBin {
+					continue
+				}
+
 				entry := Entry{
 					Path:    cleanedRoot,
 					RelPath: filepath.Base(cleanedRoot),
 					Root:    cleanedRoot,
 					Info:    info,
 					IsDir:   false,
+					Content: rc,
 				}
 				if !yield(entry, nil) {
+					_ = rc.Close()
 					return
 				}
+				_ = rc.Close()
 				continue
 			}
 
@@ -230,17 +247,45 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 					return nil
 				}
 
+				if d.IsDir() {
+					entry := Entry{
+						Path:    path,
+						RelPath: relPath,
+						Root:    cleanedRoot,
+						Info:    fileInfo,
+						IsDir:   true,
+					}
+					if !yield(entry, nil) {
+						return fs.SkipAll
+					}
+					return nil
+				}
+
+				isBin, rc, binErr := OpenAndSniff(path)
+				if binErr != nil {
+					if !yield(Entry{Path: path, Root: cleanedRoot}, binErr) {
+						return fs.SkipAll
+					}
+					return nil
+				}
+				if isBin {
+					return nil
+				}
+
 				entry := Entry{
 					Path:    path,
 					RelPath: relPath,
 					Root:    cleanedRoot,
 					Info:    fileInfo,
-					IsDir:   d.IsDir(),
+					IsDir:   false,
+					Content: rc,
 				}
 
 				if !yield(entry, nil) {
+					_ = rc.Close()
 					return fs.SkipAll
 				}
+				_ = rc.Close()
 				return nil
 			})
 

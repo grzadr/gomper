@@ -4,102 +4,141 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"log/slog"
+	"io"
+	"iter"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/grzadr/gomper/internal/scanner"
 )
 
-type internalDummyFileInfo struct {
-	name string
+func entriesToSeq(entries []scanner.Entry) iter.Seq2[scanner.Entry, error] {
+	return func(yield func(scanner.Entry, error) bool) {
+		for _, e := range entries {
+			if !yield(e, nil) {
+				return
+			}
+		}
+	}
 }
 
-func (d internalDummyFileInfo) Name() string       { return d.name }
-func (d internalDummyFileInfo) Size() int64        { return 100 }
-func (d internalDummyFileInfo) Mode() os.FileMode  { return 0644 }
-func (d internalDummyFileInfo) ModTime() time.Time { return time.Now() }
-func (d internalDummyFileInfo) IsDir() bool        { return false }
-func (d internalDummyFileInfo) Sys() any           { return nil }
+type failWriter struct {
+	failOnWrite bool
+}
+
+func (f *failWriter) Write(p []byte) (n int, err error) {
+	if f.failOnWrite {
+		return 0, errors.New("simulated target write error")
+	}
+	return len(p), nil
+}
+
+type failAfterFirstWriter struct {
+	writes int
+}
+
+func (f *failAfterFirstWriter) Write(p []byte) (n int, err error) {
+	f.writes++
+	if f.writes > 1 {
+		return 0, errors.New("simulated copy write error")
+	}
+	return len(p), nil
+}
 
 func TestDumper_InternalHooks(t *testing.T) {
-	t.Run("Logs warning when openFileHook returns error in XML and Markdown", func(t *testing.T) {
-		tempDir := t.TempDir()
-		f1 := filepath.Join(tempDir, "f1.go")
-		_ = os.WriteFile(f1, []byte("package main"), 0644)
+	t.Run("Returns error when createTempHook fails in XML and Markdown", func(t *testing.T) {
+		origHook := createTempHook
+		createTempHook = func(dir, pattern string) (*os.File, error) {
+			return nil, errors.New("simulated createTemp error")
+		}
+		defer func() { createTempHook = origHook }()
 
-		var logBuf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
-		d := NewXMLDumper(logger)
-
+		d := NewXMLDumper(nil)
 		entries := []scanner.Entry{
-			{Path: f1, RelPath: "f1.go", IsDir: false, Info: internalDummyFileInfo{"f1.go"}},
+			{Path: "test.go", RelPath: "test.go", IsDir: false, Content: io.NopCloser(strings.NewReader("content"))},
 		}
-
-		origOpen := openFileHook
-		openFileHook = func(name string) (*os.File, error) {
-			return nil, errors.New("simulated open stream error")
-		}
-		defer func() { openFileHook = origOpen }()
 
 		var xmlBuf bytes.Buffer
-		_ = d.GenerateXML(context.Background(), entries, "", &xmlBuf)
-		if !strings.Contains(logBuf.String(), "unable to stream file content for dump") {
-			t.Errorf("expected XML dump stream error warning in log, got: %s", logBuf.String())
+		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", &xmlBuf)
+		if err == nil || !strings.Contains(err.Error(), "failed to create staging file") {
+			t.Errorf("expected staging file error from GenerateXML, got: %v", err)
 		}
 
-		logBuf.Reset()
 		var mdBuf bytes.Buffer
-		_ = d.GenerateMarkdown(context.Background(), entries, "", &mdBuf)
-		if !strings.Contains(logBuf.String(), "unable to stream file content for dump") {
-			t.Errorf("expected Markdown dump stream error warning in log, got: %s", logBuf.String())
+		err = d.GenerateMarkdown(context.Background(), entriesToSeq(entries), "", &mdBuf)
+		if err == nil || !strings.Contains(err.Error(), "failed to create staging file") {
+			t.Errorf("expected staging file error from GenerateMarkdown, got: %v", err)
 		}
 	})
 
-	t.Run("Aborts file loop on context cancellation in XML and Markdown", func(t *testing.T) {
-		tempDir := t.TempDir()
-		f1 := filepath.Join(tempDir, "f1.go")
-		f2 := filepath.Join(tempDir, "f2.go")
-		_ = os.WriteFile(f1, []byte("package main"), 0644)
-		_ = os.WriteFile(f2, []byte("package main"), 0644)
-
-		entries := []scanner.Entry{
-			{Path: f1, RelPath: "f1.go", IsDir: false, Info: internalDummyFileInfo{"f1.go"}},
-			{Path: f2, RelPath: "f2.go", IsDir: false, Info: internalDummyFileInfo{"f2.go"}},
+	t.Run("Returns error when formatContentHook fails in XML and Markdown", func(t *testing.T) {
+		origHook := formatContentHook
+		formatContentHook = func(r io.Reader, w io.Writer, escapeXML bool) error {
+			return errors.New("simulated format error")
 		}
+		defer func() { formatContentHook = origHook }()
 
-		origOpen := openFileHook
-		defer func() { openFileHook = origOpen }()
-
-		// XML test
-		ctx, cancel := context.WithCancel(context.Background())
 		d := NewXMLDumper(nil)
-
-		openFileHook = func(name string) (*os.File, error) {
-			cancel() // Cancel context during first file opening
-			return origOpen(name)
+		entries := []scanner.Entry{
+			{Path: "test.go", RelPath: "test.go", IsDir: false, Content: io.NopCloser(strings.NewReader("content"))},
 		}
 
 		var xmlBuf bytes.Buffer
-		err := d.GenerateXML(ctx, entries, "", &xmlBuf)
-		if err == nil || !errors.Is(err, context.Canceled) {
-			t.Errorf("expected context.Canceled from GenerateXML, got: %v", err)
-		}
-
-		// Markdown test
-		ctx2, cancel2 := context.WithCancel(context.Background())
-		openFileHook = func(name string) (*os.File, error) {
-			cancel2() // Cancel context during first file opening
-			return origOpen(name)
+		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", &xmlBuf)
+		if err == nil || !strings.Contains(err.Error(), "simulated format error") {
+			t.Errorf("expected format error from GenerateXML, got: %v", err)
 		}
 
 		var mdBuf bytes.Buffer
-		err = d.GenerateMarkdown(ctx2, entries, "", &mdBuf)
-		if err == nil || !errors.Is(err, context.Canceled) {
-			t.Errorf("expected context.Canceled from GenerateMarkdown, got: %v", err)
+		err = d.GenerateMarkdown(context.Background(), entriesToSeq(entries), "", &mdBuf)
+		if err == nil || !strings.Contains(err.Error(), "simulated format error") {
+			t.Errorf("expected format error from GenerateMarkdown, got: %v", err)
+		}
+	})
+
+	t.Run("Returns error when seekHook fails", func(t *testing.T) {
+		origHook := seekHook
+		seekHook = func(f *os.File, offset int64, whence int) (int64, error) {
+			return 0, errors.New("simulated seek error")
+		}
+		defer func() { seekHook = origHook }()
+
+		d := NewXMLDumper(nil)
+		entries := []scanner.Entry{
+			{Path: "test.go", RelPath: "test.go", IsDir: false, Content: io.NopCloser(strings.NewReader("content"))},
+		}
+
+		var xmlBuf bytes.Buffer
+		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", &xmlBuf)
+		if err == nil || !strings.Contains(err.Error(), "failed to seek staging file") {
+			t.Errorf("expected seek error from GenerateXML, got: %v", err)
+		}
+	})
+
+	t.Run("Returns error when targetWriter fails during XML dump", func(t *testing.T) {
+		d := NewXMLDumper(nil)
+		entries := []scanner.Entry{
+			{Path: "test.go", RelPath: "test.go", IsDir: false, Content: io.NopCloser(strings.NewReader("content"))},
+		}
+
+		failW := &failWriter{failOnWrite: true}
+		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", failW)
+		if err == nil {
+			t.Errorf("expected write error when targetWriter fails, got nil")
+		}
+	})
+
+	t.Run("Returns error when io.Copy fails copying staging file", func(t *testing.T) {
+		d := NewXMLDumper(nil)
+		entries := []scanner.Entry{
+			{Path: "test.go", RelPath: "test.go", IsDir: false, Content: io.NopCloser(strings.NewReader("content"))},
+		}
+
+		failAfterHeaderW := &failAfterFirstWriter{}
+		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", failAfterHeaderW)
+		if err == nil || !strings.Contains(err.Error(), "failed to copy staging file content") {
+			t.Errorf("expected copy error from GenerateXML, got: %v", err)
 		}
 	})
 }

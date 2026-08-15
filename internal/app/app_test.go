@@ -312,8 +312,8 @@ func TestService_Dump(t *testing.T) {
 		}
 
 		output := outBuf.String()
-		if !strings.Contains(output, "[ERROR]") {
-			t.Errorf("expected output to contain [ERROR] block, got: %q", output)
+		if !strings.Contains(output, "# Codebase Context") || !strings.Contains(output, "Total Files**: 0") {
+			t.Errorf("expected output to contain valid empty dump structure, got: %q", output)
 		}
 	})
 }
