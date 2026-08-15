@@ -7,6 +7,17 @@ import (
 	"strings"
 )
 
+// AuxiliaryExtensions contains common template and example suffixes.
+var AuxiliaryExtensions = map[string]struct{}{
+	".example":  {},
+	".template": {},
+	".sample":   {},
+	".dist":     {},
+	".default":  {},
+	".tmpl":     {},
+	".tpl":      {},
+}
+
 // SupportedExtensions maps file extensions (and exact filenames) to language identifiers.
 var SupportedExtensions = map[string]string{
 	// Go
@@ -98,14 +109,29 @@ var SpecialFilenames = map[string]string{
 	"readme":     "markdown",
 }
 
+// StripAuxiliaryExtensions iteratively removes trailing auxiliary extensions from a path or filename.
+func StripAuxiliaryExtensions(path string) string {
+	for {
+		originalExt := filepath.Ext(path)
+		ext := strings.ToLower(originalExt)
+		if _, ok := AuxiliaryExtensions[ext]; !ok {
+			break
+		}
+		path = strings.TrimSuffix(path, originalExt)
+	}
+	return path
+}
+
 // LookupLanguage resolves a file path to a language identifier and indicates whether the extension/filename is in the supported list.
 func LookupLanguage(path string) (string, bool) {
-	base := strings.ToLower(filepath.Base(path))
+	stripped := StripAuxiliaryExtensions(path)
+
+	base := strings.ToLower(filepath.Base(stripped))
 	if lang, ok := SpecialFilenames[base]; ok {
 		return lang, true
 	}
 
-	ext := strings.ToLower(filepath.Ext(path))
+	ext := strings.ToLower(filepath.Ext(stripped))
 	if ext == "" {
 		return "text", false
 	}
