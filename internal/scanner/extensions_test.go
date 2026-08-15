@@ -56,14 +56,80 @@ func TestLookupLanguage(t *testing.T) {
 			expectedKnown: true,
 		},
 		{
+			name:         "Special filename with template extension",
+			path:         "Makefile.template",
+			expectedLang: "makefile",
+			expectedKnown: true,
+		},
+		{
+			name:         "Special filename with example extension",
+			path:         "Makefile.example",
+			expectedLang: "makefile",
+			expectedKnown: true,
+		},
+		{
+			name:         "Special filename with sample extension",
+			path:         "Dockerfile.sample",
+			expectedLang: "dockerfile",
+			expectedKnown: true,
+		},
+		{
+			name:         "Compound YAML example extension",
+			path:         "gomper.yaml.example",
+			expectedLang: "yaml",
+			expectedKnown: true,
+		},
+		{
+			name:         "Compound JSON dist extension",
+			path:         "config.json.dist",
+			expectedLang: "json",
+			expectedKnown: true,
+		},
+		{
+			name:         "Compound TOML default extension",
+			path:         "settings.toml.default",
+			expectedLang: "toml",
+			expectedKnown: true,
+		},
+		{
+			name:         "Compound Shell tmpl extension",
+			path:         "scripts/deploy.sh.tmpl",
+			expectedLang: "bash",
+			expectedKnown: true,
+		},
+		{
+			name:         "Compound HTML tpl extension",
+			path:         "templates/index.html.tpl",
+			expectedLang: "html",
+			expectedKnown: true,
+		},
+		{
+			name:         "Nested multiple auxiliary extensions",
+			path:         "configs/app.yaml.tmpl.example",
+			expectedLang: "yaml",
+			expectedKnown: true,
+		},
+		{
 			name:         "Unknown extension .xyz",
 			path:         "data/config.xyz",
 			expectedLang: "xyz",
 			expectedKnown: false,
 		},
 		{
+			name:         "Unknown extension with auxiliary extension",
+			path:         "data/config.xyz.example",
+			expectedLang: "xyz",
+			expectedKnown: false,
+		},
+		{
 			name:         "No extension",
 			path:         "bin/executable",
+			expectedLang: "text",
+			expectedKnown: false,
+		},
+		{
+			name:         "No extension with auxiliary extension",
+			path:         "bin/executable.sample",
 			expectedLang: "text",
 			expectedKnown: false,
 		},
@@ -77,12 +143,89 @@ func TestLookupLanguage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			lang, known := scanner.LookupLanguage(tt.path)
 			if lang != tt.expectedLang {
 				t.Errorf("expected lang %q, got %q", tt.expectedLang, lang)
 			}
 			if known != tt.expectedKnown {
 				t.Errorf("expected known %v, got %v", tt.expectedKnown, known)
+			}
+		})
+	}
+}
+
+func TestStripAuxiliaryExtensions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "No auxiliary extension",
+			input:    "main.go",
+			expected: "main.go",
+		},
+		{
+			name:     "Single .example suffix",
+			input:    "gomper.yaml.example",
+			expected: "gomper.yaml",
+		},
+		{
+			name:     "Single .template suffix",
+			input:    "Makefile.template",
+			expected: "Makefile",
+		},
+		{
+			name:     "Single .sample suffix",
+			input:    "Dockerfile.sample",
+			expected: "Dockerfile",
+		},
+		{
+			name:     "Single .dist suffix",
+			input:    "config.json.dist",
+			expected: "config.json",
+		},
+		{
+			name:     "Single .default suffix",
+			input:    "settings.toml.default",
+			expected: "settings.toml",
+		},
+		{
+			name:     "Single .tmpl suffix",
+			input:    "deploy.sh.tmpl",
+			expected: "deploy.sh",
+		},
+		{
+			name:     "Single .tpl suffix",
+			input:    "index.html.tpl",
+			expected: "index.html",
+		},
+		{
+			name:     "Multi-layer auxiliary suffixes",
+			input:    "app.config.tmpl.example.dist",
+			expected: "app.config",
+		},
+		{
+			name:     "Extensionless file with auxiliary suffix",
+			input:    "bin/executable.sample",
+			expected: "bin/executable",
+		},
+		{
+			name:     "Case-insensitive auxiliary suffix",
+			input:    "config.yaml.EXAMPLE",
+			expected: "config.yaml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := scanner.StripAuxiliaryExtensions(tt.input)
+			if got != tt.expected {
+				t.Errorf("StripAuxiliaryExtensions(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}

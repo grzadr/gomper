@@ -176,24 +176,38 @@ func (d *XMLDumper) dumpStream(ctx context.Context, seq iter.Seq2[scanner.Entry,
 			continue
 		}
 
-		treeEntries = append(treeEntries, scanner.Entry{
-			Path:    entry.Path,
-			RelPath: entry.RelPath,
-			IsDir:   entry.IsDir,
-		})
-
 		if entry.IsDir {
+			treeEntries = append(treeEntries, scanner.Entry{
+				Path:    entry.Path,
+				RelPath: entry.RelPath,
+				IsDir:   entry.IsDir,
+			})
 			continue
 		}
 
 		lang, known := scanner.LookupLanguage(entry.Path)
+		stripped := scanner.StripAuxiliaryExtensions(entry.Path)
+		ext := filepath.Ext(stripped)
+
+		if ext == "" && !known {
+			d.logger.WarnContext(ctx, "ignoring file without extension",
+				slog.String("path", entry.Path),
+			)
+			continue
+		}
+
 		if !known {
-			ext := filepath.Ext(entry.Path)
 			d.logger.InfoContext(ctx, "unsupported file extension encountered",
 				slog.String("path", entry.Path),
 				slog.String("ext", ext),
 			)
 		}
+
+		treeEntries = append(treeEntries, scanner.Entry{
+			Path:    entry.Path,
+			RelPath: entry.RelPath,
+			IsDir:   entry.IsDir,
+		})
 
 		var size int64
 		if entry.Info != nil {

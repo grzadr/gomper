@@ -225,6 +225,118 @@ func TestGenerateMarkdown(t *testing.T) {
 	}
 }
 
+func TestDumper_IgnoreExtensionlessFiles(t *testing.T) {
+	t.Run("GenerateXML excludes extensionless files and logs warnings", func(t *testing.T) {
+		var logBuf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+		xmlDumper := dumper.NewXMLDumper(logger)
+
+		entries := []scanner.Entry{
+			{Path: "root", RelPath: ".", IsDir: true, Info: dummyFileInfo{name: ".", size: 0}},
+			{Path: "bin", RelPath: "bin", IsDir: true, Info: dummyFileInfo{name: "bin", size: 0}},
+			{Path: "bin/gomper", RelPath: "bin/gomper", IsDir: false, Info: dummyFileInfo{name: "gomper", size: 50}, Content: io.NopCloser(strings.NewReader("binary-data"))},
+			{Path: "standalone", RelPath: "standalone", IsDir: false, Info: dummyFileInfo{name: "standalone", size: 20}, Content: io.NopCloser(strings.NewReader("standalone text"))},
+			{Path: "helper.sample", RelPath: "helper.sample", IsDir: false, Info: dummyFileInfo{name: "helper.sample", size: 30}, Content: io.NopCloser(strings.NewReader("sample script"))},
+			{Path: "Makefile", RelPath: "Makefile", IsDir: false, Info: dummyFileInfo{name: "Makefile", size: 40}, Content: io.NopCloser(strings.NewReader("all: build"))},
+			{Path: "Makefile.template", RelPath: "Makefile.template", IsDir: false, Info: dummyFileInfo{name: "Makefile.template", size: 45}, Content: io.NopCloser(strings.NewReader("all: template"))},
+			{Path: "gomper.yaml.example", RelPath: "gomper.yaml.example", IsDir: false, Info: dummyFileInfo{name: "gomper.yaml.example", size: 60}, Content: io.NopCloser(strings.NewReader("key: value"))},
+			{Path: "src/main.go", RelPath: "src/main.go", IsDir: false, Info: dummyFileInfo{name: "main.go", size: 80}, Content: io.NopCloser(strings.NewReader("package main"))},
+		}
+
+		var xmlBuf bytes.Buffer
+		err := xmlDumper.GenerateXML(t.Context(), entriesToSeq(entries), "", &xmlBuf)
+		if err != nil {
+			t.Fatalf("unexpected GenerateXML error: %v", err)
+		}
+
+		xmlStr := xmlBuf.String()
+		logStr := logBuf.String()
+
+		// Warning logs for extensionless files
+		if !strings.Contains(logStr, "ignoring file without extension") || !strings.Contains(logStr, "bin/gomper") {
+			t.Errorf("expected warning log for bin/gomper, got: %s", logStr)
+		}
+		if !strings.Contains(logStr, "standalone") {
+			t.Errorf("expected warning log for standalone, got: %s", logStr)
+		}
+		if !strings.Contains(logStr, "helper.sample") {
+			t.Errorf("expected warning log for helper.sample, got: %s", logStr)
+		}
+
+		// Total files count should only count the 4 valid files
+		if !strings.Contains(xmlStr, "<total_files>4</total_files>") {
+			t.Errorf("expected total_files to be 4, got output:\n%s", xmlStr)
+		}
+
+		// Directory tree should include directory "bin/" but NOT "gomper"
+		if !strings.Contains(xmlStr, "bin/") {
+			t.Errorf("expected directory tree to contain bin/ directory")
+		}
+		if strings.Contains(xmlStr, "bin/gomper") || strings.Contains(xmlStr, `path="bin/gomper"`) {
+			t.Errorf("expected bin/gomper to be excluded from XML output")
+		}
+		if strings.Contains(xmlStr, `path="standalone"`) {
+			t.Errorf("expected standalone to be excluded from XML output")
+		}
+		if strings.Contains(xmlStr, `path="helper.sample"`) {
+			t.Errorf("expected helper.sample to be excluded from XML output")
+		}
+
+		// Valid files should be present with correct languages
+		if !strings.Contains(xmlStr, `<file path="Makefile" language="makefile"`) {
+			t.Errorf("expected Makefile with language makefile")
+		}
+		if !strings.Contains(xmlStr, `<file path="Makefile.template" language="makefile"`) {
+			t.Errorf("expected Makefile.template with language makefile")
+		}
+		if !strings.Contains(xmlStr, `<file path="gomper.yaml.example" language="yaml"`) {
+			t.Errorf("expected gomper.yaml.example with language yaml")
+		}
+		if !strings.Contains(xmlStr, `<file path="src/main.go" language="go"`) {
+			t.Errorf("expected src/main.go with language go")
+		}
+	})
+
+	t.Run("GenerateMarkdown excludes extensionless files and logs warnings", func(t *testing.T) {
+		var logBuf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+		xmlDumper := dumper.NewXMLDumper(logger)
+
+		entries := []scanner.Entry{
+			{Path: "bin/gomper", RelPath: "bin/gomper", IsDir: false, Info: dummyFileInfo{name: "gomper", size: 50}, Content: io.NopCloser(strings.NewReader("binary-data"))},
+			{Path: "Makefile.template", RelPath: "Makefile.template", IsDir: false, Info: dummyFileInfo{name: "Makefile.template", size: 45}, Content: io.NopCloser(strings.NewReader("all: template"))},
+			{Path: "gomper.yaml.example", RelPath: "gomper.yaml.example", IsDir: false, Info: dummyFileInfo{name: "gomper.yaml.example", size: 60}, Content: io.NopCloser(strings.NewReader("key: value"))},
+		}
+
+		var mdBuf bytes.Buffer
+		err := xmlDumper.GenerateMarkdown(t.Context(), entriesToSeq(entries), "", &mdBuf)
+		if err != nil {
+			t.Fatalf("unexpected GenerateMarkdown error: %v", err)
+		}
+
+		mdStr := mdBuf.String()
+		logStr := logBuf.String()
+
+		if !strings.Contains(logStr, "ignoring file without extension") || !strings.Contains(logStr, "bin/gomper") {
+			t.Errorf("expected warning log for bin/gomper, got: %s", logStr)
+		}
+
+		if !strings.Contains(mdStr, "- **Total Files**: 2") {
+			t.Errorf("expected Total Files 2 in markdown, got output:\n%s", mdStr)
+		}
+
+		if strings.Contains(mdStr, "### File: `bin/gomper`") {
+			t.Errorf("expected bin/gomper to be excluded from Markdown files")
+		}
+		if !strings.Contains(mdStr, "### File: `Makefile.template`") {
+			t.Errorf("expected Makefile.template in Markdown files")
+		}
+		if !strings.Contains(mdStr, "### File: `gomper.yaml.example`") {
+			t.Errorf("expected gomper.yaml.example in Markdown files")
+		}
+	})
+}
+
 func TestNewXMLDumper_NilLogger(t *testing.T) {
 	d := dumper.NewXMLDumper(nil)
 	if d == nil {
