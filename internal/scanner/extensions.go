@@ -112,11 +112,12 @@ var SpecialFilenames = map[string]string{
 // StripAuxiliaryExtensions iteratively removes trailing auxiliary extensions from a path or filename.
 func StripAuxiliaryExtensions(path string) string {
 	for {
-		ext := strings.ToLower(filepath.Ext(path))
+		originalExt := filepath.Ext(path)
+		ext := strings.ToLower(originalExt)
 		if _, ok := AuxiliaryExtensions[ext]; !ok {
 			break
 		}
-		path = strings.TrimSuffix(path, filepath.Ext(path))
+		path = strings.TrimSuffix(path, originalExt)
 	}
 	return path
 }
