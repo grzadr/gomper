@@ -85,31 +85,31 @@ root_test.go
 
 #### Detailed Tabular Output (`--format detailed`)
 
-Render an aligned table with file path, detected extension, resolved language identifier, size in bytes, line count, and token count (calculated via a single-pass streaming scanner):
+Render a fixed-width, path-trailing aligned table with size in bytes, line count, token count, detected extension, resolved language identifier, and file path (calculated via a pure $O(1)$ memory streaming scanner without intermediate heap buffering):
 
 ```bash
 ./bin/gomper list . --format detailed
 ```
 
 ```text
-FILE                                     EXTENSION  LANGUAGE  SIZE   LINES  TOKENS
-LICENSE                                  -          text      1072   21     169
-Makefile                                 -          makefile  1948   72     268
-README.md                                .md        markdown  13839  397    1836
-cmd/list.go                              .go        go        2661   77     255
-gomper.yaml.example                      .yaml      yaml      670    33     103
-internal/app/app.go                      .go        go        4795   184    536
-internal/scanner/metrics.go              .go        go        924    48     174
+SIZE         LINES   TOKENS  EXTENSION   LANGUAGE    FILE
+1072 B          21      169  -           text        LICENSE
+1948 B          72      268  -           makefile    Makefile
+15800 B        430     2078  .md         markdown    README.md
+2661 B          77      255  .go         go          cmd/list.go
+670 B           33      103  .yaml       yaml        gomper.yaml.example
+4795 B         184      536  .go         go          internal/app/app.go
+924 B           48      174  .go         go          internal/scanner/metrics.go
 ```
 
 | Column | Description |
 | :--- | :--- |
-| `FILE` | Relative file path from the scanned root. |
-| `EXTENSION` | Effective file extension after stripping auxiliary suffixes (e.g. `.yaml.example` $\to$ `.yaml`; `-` for files without extension). |
-| `LANGUAGE` | Resolved programming or markup language identifier (`go`, `makefile`, `markdown`, etc.; `-` if unrecognized). |
-| `SIZE` | File size in bytes. |
+| `SIZE` | File size in bytes formatted with unit suffix (e.g. `1024 B`). |
 | `LINES` | Total line count computed in a single pass over the file stream. |
 | `TOKENS` | Total whitespace-delimited tokens computed simultaneously with line counting. |
+| `EXTENSION` | Effective file extension after stripping auxiliary suffixes (e.g. `.yaml.example` $\to$ `.yaml`; `-` for files without extension). |
+| `LANGUAGE` | Resolved programming or markup language identifier (`go`, `makefile`, `markdown`, etc.; `-` if unrecognized). |
+| `FILE` | Relative or display file path trailing at the end of each row. |
 
 #### Options
 

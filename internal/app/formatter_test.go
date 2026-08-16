@@ -106,14 +106,18 @@ func TestDetailedFormatter(t *testing.T) {
 			t.Fatalf("unexpected Flush error: %v", err)
 		}
 		out := buf.String()
-		if !strings.Contains(out, "FILE") || !strings.Contains(out, "EXTENSION") || !strings.Contains(out, "LANGUAGE") || !strings.Contains(out, "SIZE") || !strings.Contains(out, "LINES") || !strings.Contains(out, "TOKENS") {
-			t.Errorf("expected header in output, got:\n%s", out)
+		if !strings.Contains(out, "SIZE") || !strings.Contains(out, "LINES") || !strings.Contains(out, "TOKENS") || !strings.Contains(out, "EXTENSION") || !strings.Contains(out, "LANGUAGE") || !strings.Contains(out, "FILE") {
+			t.Errorf("expected fixed-width header in output, got:\n%s", out)
 		}
 	})
 
 	t.Run("Formats entries in aligned tabular format with fallbacks", func(t *testing.T) {
 		formatter := app.NewDetailedFormatter()
 		var buf bytes.Buffer
+		if err := formatter.WriteHeader(&buf); err != nil {
+			t.Fatalf("unexpected WriteHeader error: %v", err)
+		}
+
 		entries := []scanner.Entry{
 			{
 				Path:      "/root/main.go",
@@ -134,6 +138,15 @@ func TestDetailedFormatter(t *testing.T) {
 				Lines:     80,
 				Tokens:    300,
 			},
+			{
+				Path:      "/root/Makefile",
+				RelPath:   "Makefile",
+				Extension: "-",
+				Language:  "makefile",
+				Size:      1024,
+				Lines:     50,
+				Tokens:    120,
+			},
 		}
 
 		for _, e := range entries {
@@ -146,38 +159,14 @@ func TestDetailedFormatter(t *testing.T) {
 		}
 
 		out := buf.String()
-		if !strings.Contains(out, "main.go") || !strings.Contains(out, ".go") || !strings.Contains(out, "go") || !strings.Contains(out, "250") {
+		if !strings.Contains(out, "250 B") || !strings.Contains(out, "main.go") || !strings.Contains(out, ".go") || !strings.Contains(out, "go") {
 			t.Errorf("expected main.go details in table output, got:\n%s", out)
 		}
-		if !strings.Contains(out, "/root/nested/doc.md") || !strings.Contains(out, "100") || !strings.Contains(out, "-") {
+		if !strings.Contains(out, "100 B") || !strings.Contains(out, "/root/nested/doc.md") || !strings.Contains(out, "-") {
 			t.Errorf("expected fallback path and info size in table output, got:\n%s", out)
 		}
-	})
-
-	t.Run("Flush directly initializes header if WriteHeader was not called", func(t *testing.T) {
-		formatter := app.NewDetailedFormatter()
-		var buf bytes.Buffer
-		if err := formatter.Flush(&buf); err != nil {
-			t.Fatalf("unexpected error on direct Flush: %v", err)
-		}
-		out := buf.String()
-		if !strings.Contains(out, "FILE") {
-			t.Errorf("expected header on direct Flush, got: %q", out)
-		}
-	})
-
-	t.Run("FormatEntry directly initializes header if WriteHeader was not called", func(t *testing.T) {
-		formatter := app.NewDetailedFormatter()
-		var buf bytes.Buffer
-		if err := formatter.FormatEntry(&buf, scanner.Entry{Path: "/path/file.txt", Extension: ".txt", Language: "text"}); err != nil {
-			t.Fatalf("unexpected error on direct FormatEntry: %v", err)
-		}
-		if err := formatter.Flush(&buf); err != nil {
-			t.Fatalf("unexpected error on Flush: %v", err)
-		}
-		out := buf.String()
-		if !strings.Contains(out, "FILE") || !strings.Contains(out, "file.txt") {
-			t.Errorf("expected header and row on direct FormatEntry, got: %q", out)
+		if !strings.Contains(out, "1024 B") || !strings.Contains(out, "Makefile") || !strings.Contains(out, "makefile") {
+			t.Errorf("expected Makefile details in table output, got:\n%s", out)
 		}
 	})
 }

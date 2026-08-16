@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"text/tabwriter"
 	"time"
 
 	"github.com/grzadr/gomper/internal/scanner"
@@ -96,24 +95,6 @@ func (f *failingFormatter) RequiresMetrics() bool {
 	return false
 }
 
-func TestDetailedFormatter_FlushError(t *testing.T) {
-	origHook := tabwriterFlushHook
-	defer func() { tabwriterFlushHook = origHook }()
-
-	expectedErr := errors.New("simulated flush failure")
-	tabwriterFlushHook = func(w *tabwriter.Writer) error {
-		return expectedErr
-	}
-
-	formatter := NewDetailedFormatter()
-	var buf bytes.Buffer
-	_ = formatter.FormatEntry(&buf, scanner.Entry{Path: "file.go"})
-	err := formatter.Flush(&buf)
-	if err == nil || !strings.Contains(err.Error(), "failed to flush tabwriter") {
-		t.Fatalf("expected flush error, got: %v", err)
-	}
-}
-
 func TestService_List_FormatterErrors(t *testing.T) {
 	svc := NewService(nil)
 
@@ -153,4 +134,3 @@ func TestService_List_FormatterErrors(t *testing.T) {
 		}
 	})
 }
-

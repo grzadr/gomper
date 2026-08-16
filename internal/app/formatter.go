@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/grzadr/gomper/internal/scanner"
 )
@@ -74,34 +73,23 @@ func (f *StandardFormatter) RequiresMetrics() bool {
 	return false
 }
 
-// DetailedFormatter formats file entries as an aligned table with file, extension, language, size, lines, and tokens.
-type DetailedFormatter struct {
-	tw *tabwriter.Writer
-}
+// DetailedFormatter formats file entries in a fixed-width, path-trailing layout with O(1) memory overhead.
+type DetailedFormatter struct{}
 
 // NewDetailedFormatter creates a DetailedFormatter instance.
 func NewDetailedFormatter() *DetailedFormatter {
 	return &DetailedFormatter{}
 }
 
-// Hook for tabwriter flushing to allow unit test error simulation.
-var tabwriterFlushHook = func(w *tabwriter.Writer) error {
-	return w.Flush()
-}
-
-// WriteHeader initializes tabwriter and writes table header columns.
+// WriteHeader writes fixed-width column headers directly to w.
 func (f *DetailedFormatter) WriteHeader(w io.Writer) error {
-	f.tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(f.tw, "FILE\tEXTENSION\tLANGUAGE\tSIZE\tLINES\tTOKENS")
-	return nil
+	_, err := fmt.Fprintf(w, "%-12s %7s %8s  %-10s  %-10s  %s\n",
+		"SIZE", "LINES", "TOKENS", "EXTENSION", "LANGUAGE", "FILE")
+	return err
 }
 
-// FormatEntry writes a single row to the tabwriter.
+// FormatEntry writes a single formatted row directly to w without intermediate buffering.
 func (f *DetailedFormatter) FormatEntry(w io.Writer, entry scanner.Entry) error {
-	if f.tw == nil {
-		_ = f.WriteHeader(w)
-	}
-
 	displayPath := entry.RelPath
 	if displayPath == "." || displayPath == "" {
 		displayPath = entry.Path
@@ -122,25 +110,21 @@ func (f *DetailedFormatter) FormatEntry(w io.Writer, entry scanner.Entry) error 
 		size = entry.Info.Size()
 	}
 
-	_, err := fmt.Fprintf(f.tw, "%s\t%s\t%s\t%d\t%d\t%d\n",
-		displayPath,
-		ext,
-		lang,
-		size,
+	formattedSize := fmt.Sprintf("%d B", size)
+
+	_, err := fmt.Fprintf(w, "%-12s %7d %8d  %-10s  %-10s  %s\n",
+		formattedSize,
 		entry.Lines,
 		entry.Tokens,
+		ext,
+		lang,
+		displayPath,
 	)
 	return err
 }
 
-// Flush flushes the underlying tabwriter.Writer.
+// Flush flushes any buffered output (no-op for streaming DetailedFormatter).
 func (f *DetailedFormatter) Flush(w io.Writer) error {
-	if f.tw == nil {
-		_ = f.WriteHeader(w)
-	}
-	if err := tabwriterFlushHook(f.tw); err != nil {
-		return fmt.Errorf("failed to flush tabwriter: %w", err)
-	}
 	return nil
 }
 
