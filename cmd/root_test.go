@@ -388,6 +388,74 @@ func TestCLI_ListCommand(t *testing.T) {
 			t.Errorf("expected binary file 'executable' to be implicitly ignored, got: %q", output)
 		}
 	})
+
+	t.Run("Executes list with --format detailed", func(t *testing.T) {
+		tempDir := t.TempDir()
+		codeFile := filepath.Join(tempDir, "main.go")
+		_ = os.WriteFile(codeFile, []byte("package main\n\nfunc main() {}\n"), 0644)
+
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"list", tempDir, "--format", "detailed"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error running list --format detailed: %v", err)
+		}
+
+		output := outBuf.String()
+		if !strings.Contains(output, "FILE") || !strings.Contains(output, "EXTENSION") || !strings.Contains(output, "SIZE") || !strings.Contains(output, "LINES") || !strings.Contains(output, "TOKENS") {
+			t.Errorf("expected detailed headers in output, got: %q", output)
+		}
+		if !strings.Contains(output, "main.go") || !strings.Contains(output, ".go") {
+			t.Errorf("expected main.go and .go in detailed output, got: %q", output)
+		}
+	})
+
+	t.Run("Executes list with --format standard", func(t *testing.T) {
+		tempDir := t.TempDir()
+		codeFile := filepath.Join(tempDir, "app.py")
+		_ = os.WriteFile(codeFile, []byte("print('hello')\n"), 0644)
+
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"list", tempDir, "--format", "standard"})
+		if err := rootCmd.Execute(); err != nil {
+			t.Fatalf("unexpected error running list --format standard: %v", err)
+		}
+
+		output := outBuf.String()
+		if !strings.Contains(output, "app.py") {
+			t.Errorf("expected app.py in standard output, got: %q", output)
+		}
+		if strings.Contains(output, "EXTENSION") {
+			t.Errorf("expected no detailed headers in standard output, got: %q", output)
+		}
+	})
+
+	t.Run("Fails cleanly when invalid --format is provided", func(t *testing.T) {
+		tempDir := t.TempDir()
+		rootCmd := cmd.NewRootCommand(nil)
+		outBuf := new(bytes.Buffer)
+		errBuf := new(bytes.Buffer)
+		rootCmd.SetOut(outBuf)
+		rootCmd.SetErr(errBuf)
+
+		rootCmd.SetArgs([]string{"list", tempDir, "--format", "unsupported_format"})
+		err := rootCmd.Execute()
+		if err == nil {
+			t.Fatalf("expected error for unsupported format, got nil")
+		}
+		if !strings.Contains(err.Error(), "unsupported list format") {
+			t.Errorf("expected unsupported list format error, got: %v", err)
+		}
+	})
 }
 
 
