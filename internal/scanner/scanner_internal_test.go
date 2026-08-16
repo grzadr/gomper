@@ -186,9 +186,13 @@ func TestWalkPaths_WithComputeMetrics(t *testing.T) {
 			if entry.Extension != ".go" {
 				t.Errorf("expected .go extension, got %q", entry.Extension)
 			}
+			if entry.Language != "go" {
+				t.Errorf("expected go language, got %q", entry.Language)
+			}
 		}
 		if count != 1 {
 			t.Errorf("expected 1 file yielded, got %d", count)
 		}
 	})
 }
+

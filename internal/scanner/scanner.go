@@ -22,6 +22,7 @@ type Entry struct {
 	IsDir     bool
 	Content   io.ReadCloser
 	Extension string
+	Language  string
 	Size      int64
 	Lines     int
 	Tokens    int
@@ -246,6 +247,20 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 					rc = nil
 				}
 
+				lang, known := LookupLanguage(cleanedRoot)
+				stripped := StripAuxiliaryExtensions(cleanedRoot)
+				ext := filepath.Ext(stripped)
+
+				displayExt := ext
+				if displayExt == "" {
+					displayExt = "-"
+				}
+
+				displayLang := lang
+				if !known || displayLang == "" {
+					displayLang = "-"
+				}
+
 				entry := Entry{
 					Path:      cleanedRoot,
 					RelPath:   filepath.Base(cleanedRoot),
@@ -253,7 +268,8 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 					Info:      info,
 					IsDir:     false,
 					Content:   rc,
-					Extension: filepath.Ext(cleanedRoot),
+					Extension: displayExt,
+					Language:  displayLang,
 					Size:      info.Size(),
 					Lines:     lines,
 					Tokens:    tokens,
@@ -345,6 +361,20 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 					rc = nil
 				}
 
+				lang, known := LookupLanguage(path)
+				stripped := StripAuxiliaryExtensions(path)
+				ext := filepath.Ext(stripped)
+
+				displayExt := ext
+				if displayExt == "" {
+					displayExt = "-"
+				}
+
+				displayLang := lang
+				if !known || displayLang == "" {
+					displayLang = "-"
+				}
+
 				entry := Entry{
 					Path:      path,
 					RelPath:   relPath,
@@ -352,7 +382,8 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 					Info:      fileInfo,
 					IsDir:     false,
 					Content:   rc,
-					Extension: filepath.Ext(path),
+					Extension: displayExt,
+					Language:  displayLang,
 					Size:      fileInfo.Size(),
 					Lines:     lines,
 					Tokens:    tokens,

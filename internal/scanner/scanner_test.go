@@ -676,6 +676,9 @@ func TestWalkPaths_Metrics(t *testing.T) {
 				if entry.Extension != ".md" {
 					t.Errorf("expected extension .md, got %q", entry.Extension)
 				}
+				if entry.Language != "markdown" {
+					t.Errorf("expected language markdown, got %q", entry.Language)
+				}
 				if entry.Lines != 3 {
 					t.Errorf("expected 3 lines, got %d", entry.Lines)
 				}
@@ -688,7 +691,61 @@ func TestWalkPaths_Metrics(t *testing.T) {
 			t.Fatal("expected to find README.md in scan")
 		}
 	})
+
+	t.Run("Resolves language, auxiliary extensions and placeholders for special files", func(t *testing.T) {
+		makeFile := filepath.Join(tempDir, "Makefile")
+		yamlExFile := filepath.Join(tempDir, "config.yaml.example")
+		unknownFile := filepath.Join(tempDir, "data.unknownext")
+		_ = os.WriteFile(makeFile, []byte("all:\n\t@echo hi\n"), 0644)
+		_ = os.WriteFile(yamlExFile, []byte("key: value\n"), 0644)
+		_ = os.WriteFile(unknownFile, []byte("custom content\n"), 0644)
+
+		ctx := context.Background()
+		results := make(map[string]scanner.Entry)
+		for entry, err := range scanner.WalkPaths(ctx, []string{tempDir}, nil) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir {
+				results[filepath.Base(entry.Path)] = entry
+			}
+		}
+
+		if e, ok := results["Makefile"]; !ok {
+			t.Errorf("expected Makefile in results")
+		} else {
+			if e.Extension != "-" {
+				t.Errorf("expected '-' extension for Makefile, got %q", e.Extension)
+			}
+			if e.Language != "makefile" {
+				t.Errorf("expected 'makefile' language for Makefile, got %q", e.Language)
+			}
+		}
+
+		if e, ok := results["config.yaml.example"]; !ok {
+			t.Errorf("expected config.yaml.example in results")
+		} else {
+			if e.Extension != ".yaml" {
+				t.Errorf("expected '.yaml' extension for config.yaml.example, got %q", e.Extension)
+			}
+			if e.Language != "yaml" {
+				t.Errorf("expected 'yaml' language for config.yaml.example, got %q", e.Language)
+			}
+		}
+
+		if e, ok := results["data.unknownext"]; !ok {
+			t.Errorf("expected data.unknownext in results")
+		} else {
+			if e.Extension != ".unknownext" {
+				t.Errorf("expected '.unknownext' extension, got %q", e.Extension)
+			}
+			if e.Language != "-" {
+				t.Errorf("expected '-' language for unknown extension, got %q", e.Language)
+			}
+		}
+	})
 }
+
 
 
 
