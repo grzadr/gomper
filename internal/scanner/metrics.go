@@ -1,10 +1,13 @@
 package scanner
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"sync"
 )
+
+var newlineSlice = []byte{'\n'}
 
 var bufferPool = sync.Pool{
 	New: func() any {
@@ -13,8 +16,8 @@ var bufferPool = sync.Pool{
 	},
 }
 
-// CountLinesAndTokens reads from r in a single pass using a pooled 32KB buffer,
-// counting both the number of lines and whitespace-delimited tokens simultaneously.
+// CountLinesAndTokens reads from r using a pooled 32KB buffer, leveraging SIMD-accelerated
+// line counting (bytes.Count) and an optimized L1-hot jump-table state machine for whitespace tokens.
 func CountLinesAndTokens(r io.Reader) (lines int, tokens int, err error) {
 	if r == nil {
 		return 0, 0, nil
@@ -36,19 +39,24 @@ func CountLinesAndTokens(r io.Reader) (lines int, tokens int, err error) {
 		n, err := r.Read(buf)
 		if n > 0 {
 			hasBytes = true
+			chunk := buf[:n]
+
+			// 1. SIMD-accelerated line count
+			lines += bytes.Count(chunk, newlineSlice)
+
+			// 2. L1-hot cache token pass using jump tables
 			for i := 0; i < n; i++ {
-				b := buf[i]
-				if b == '\n' {
-					lines++
-				}
-				if b == ' ' || b == '\t' || b == '\n' || b == '\r' || b == '\v' || b == '\f' {
+				switch chunk[i] {
+				case ' ', '\t', '\n', '\r', '\v', '\f':
 					inToken = false
-				} else if !inToken {
-					inToken = true
-					tokens++
+				default:
+					if !inToken {
+						inToken = true
+						tokens++
+					}
 				}
 			}
-			lastByte = buf[n-1]
+			lastByte = chunk[n-1]
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
