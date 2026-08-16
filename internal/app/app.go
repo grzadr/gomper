@@ -15,6 +15,7 @@ import (
 // ListOptions specifies formatting and filtering controls for the list command.
 type ListOptions struct {
 	LongFormat     bool
+	Formatter      Formatter
 	IgnorePatterns []string
 	IgnoreDirs     []string
 	IgnoreDotfiles bool
@@ -90,7 +91,18 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 		return err
 	}
 
-	for entry, err := range walkPathsFunc(ctx, paths, filter) {
+	formatter := opts.Formatter
+	if formatter == nil {
+		formatter = NewStandardFormatter(opts.LongFormat)
+	}
+
+	var scanOpts []scanner.ScanOption
+	if formatter.RequiresMetrics() {
+		scanOpts = append(scanOpts, scanner.WithComputeMetrics(true))
+	}
+
+	var entries []scanner.Entry
+	for entry, err := range walkPathsFunc(ctx, paths, filter, scanOpts...) {
 		if err != nil {
 			logger.ErrorContext(ctx, "scan error encountered", slog.String("path", entry.Path), slog.Any("error", err))
 			_, _ = fmt.Fprintf(out, "[ERROR] %s: %v\n", entry.Path, err)
@@ -101,22 +113,16 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 			continue
 		}
 
-		displayPath := entry.RelPath
-		if displayPath == "." || displayPath == "" {
-			displayPath = entry.Path
-		}
-
-		if opts.LongFormat {
-			_, _ = fmt.Fprintf(out, "FILE  %10d B  %s  %s\n",
-				entry.Info.Size(),
-				entry.Info.Mode(),
-				displayPath,
-			)
-		} else {
-			_, _ = fmt.Fprintln(out, displayPath)
-		}
+		entries = append(entries, entry)
 	}
-	return nil
+
+	formatted, err := formatter.Format(entries)
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprint(out, formatted)
+	return err
 }
 
 // Dump scans paths using scanner.WalkPaths and prepares structure output in the specified format.

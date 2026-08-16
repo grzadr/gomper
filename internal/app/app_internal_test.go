@@ -3,10 +3,12 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"iter"
 	"os"
 	"strings"
 	"testing"
+	"text/tabwriter"
 	"time"
 
 	"github.com/grzadr/gomper/internal/scanner"
@@ -70,3 +72,45 @@ func TestService_List_DisplayPathFallback(t *testing.T) {
 		t.Errorf("expected long format line with full Path fallback, got output:\n%s", outputLong)
 	}
 }
+
+type failingFormatter struct {
+	err error
+}
+
+func (f *failingFormatter) Format(entries []scanner.Entry) (string, error) {
+	return "", f.err
+}
+
+func (f *failingFormatter) RequiresMetrics() bool {
+	return false
+}
+
+func TestDetailedFormatter_FlushError(t *testing.T) {
+	origHook := tabwriterFlushHook
+	defer func() { tabwriterFlushHook = origHook }()
+
+	expectedErr := errors.New("simulated flush failure")
+	tabwriterFlushHook = func(w *tabwriter.Writer) error {
+		return expectedErr
+	}
+
+	formatter := NewDetailedFormatter()
+	_, err := formatter.Format([]scanner.Entry{{Path: "file.go"}})
+	if err == nil || !strings.Contains(err.Error(), "failed to flush tabwriter") {
+		t.Fatalf("expected flush error, got: %v", err)
+	}
+}
+
+func TestService_List_FormatterError(t *testing.T) {
+	svc := NewService(nil)
+	expectedErr := errors.New("custom format failure")
+	opts := ListOptions{
+		Formatter: &failingFormatter{err: expectedErr},
+	}
+
+	err := svc.List(context.Background(), new(bytes.Buffer), []string{"."}, opts)
+	if err == nil || !errors.Is(err, expectedErr) {
+		t.Fatalf("expected formatter error %v, got %v", expectedErr, err)
+	}
+}
+
