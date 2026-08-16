@@ -6,7 +6,7 @@ tools:
   - grep_search
   - run_command
 subagent: true
-mainAgent: false
+mainAgent: flash
 model: pro
 commandExecutionPolicy: sandbox
 skills:
