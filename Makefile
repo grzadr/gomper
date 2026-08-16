@@ -5,7 +5,7 @@ BINARY_NAME=gomper
 BIN_DIR=bin
 COVERAGE_DIR=coverage
 COVERAGE_FILE=$(COVERAGE_DIR)/coverage.out
-MIN_COVERAGE=90.0
+MIN_COVERAGE=95.0
 
 # Default target
 all: build
