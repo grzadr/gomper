@@ -190,8 +190,11 @@ func WithTokenizer(t Tokenizer) ScanOption {
 	}
 }
 
-// Hook for directory tree traversal, allowing unit test error injection.
-var walkDirFunc = filepath.WalkDir
+// Hooks for file operations and traversal, allowing unit test error injection.
+var (
+	walkDirFunc             = filepath.WalkDir
+	countLinesAndTokensFunc = CountLinesAndTokens
+)
 
 // WalkPaths returns an iter.Seq2[Entry, error] iterator (Go range-over-function)
 // that traverses all files and directories specified by paths, filtering out entries
@@ -236,7 +239,7 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 				var lines, tokens int
 				if scanOpts.ComputeMetrics {
 					var metricErr error
-					lines, tokens, metricErr = CountLinesAndTokens(rc)
+					lines, tokens, metricErr = countLinesAndTokensFunc(rc)
 					_ = rc.Close()
 					if metricErr != nil {
 						if !yield(Entry{Path: cleanedRoot, Root: cleanedRoot}, metricErr) {
@@ -350,7 +353,7 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 				var lines, tokens int
 				if scanOpts.ComputeMetrics {
 					var metricErr error
-					lines, tokens, metricErr = CountLinesAndTokens(rc)
+					lines, tokens, metricErr = countLinesAndTokensFunc(rc)
 					_ = rc.Close()
 					if metricErr != nil {
 						if !yield(Entry{Path: path, Root: cleanedRoot}, metricErr) {

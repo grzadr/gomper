@@ -92,16 +92,14 @@ var tabwriterFlushHook = func(w *tabwriter.Writer) error {
 // WriteHeader initializes tabwriter and writes table header columns.
 func (f *DetailedFormatter) WriteHeader(w io.Writer) error {
 	f.tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, err := fmt.Fprintln(f.tw, "FILE\tEXTENSION\tLANGUAGE\tSIZE\tLINES\tTOKENS")
-	return err
+	_, _ = fmt.Fprintln(f.tw, "FILE\tEXTENSION\tLANGUAGE\tSIZE\tLINES\tTOKENS")
+	return nil
 }
 
 // FormatEntry writes a single row to the tabwriter.
 func (f *DetailedFormatter) FormatEntry(w io.Writer, entry scanner.Entry) error {
 	if f.tw == nil {
-		if err := f.WriteHeader(w); err != nil {
-			return err
-		}
+		_ = f.WriteHeader(w)
 	}
 
 	displayPath := entry.RelPath
@@ -138,9 +136,7 @@ func (f *DetailedFormatter) FormatEntry(w io.Writer, entry scanner.Entry) error 
 // Flush flushes the underlying tabwriter.Writer.
 func (f *DetailedFormatter) Flush(w io.Writer) error {
 	if f.tw == nil {
-		if err := f.WriteHeader(w); err != nil {
-			return err
-		}
+		_ = f.WriteHeader(w)
 	}
 	if err := tabwriterFlushHook(f.tw); err != nil {
 		return fmt.Errorf("failed to flush tabwriter: %w", err)
