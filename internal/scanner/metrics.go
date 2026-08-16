@@ -3,15 +3,31 @@ package scanner
 import (
 	"errors"
 	"io"
+	"sync"
 )
 
-// CountLinesAndTokens reads from r in a single pass using a 32KB buffer,
+var bufferPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 32*1024)
+		return &b
+	},
+}
+
+// CountLinesAndTokens reads from r in a single pass using a pooled 32KB buffer,
 // counting both the number of lines and whitespace-delimited tokens simultaneously.
 func CountLinesAndTokens(r io.Reader) (lines int, tokens int, err error) {
 	if r == nil {
 		return 0, 0, nil
 	}
-	buf := make([]byte, 32*1024)
+
+	bufPtr := bufferPool.Get().(*[]byte)
+	defer func() {
+		// Reset slice length to full capacity to prevent degradation on reuse
+		*bufPtr = (*bufPtr)[:cap(*bufPtr)]
+		bufferPool.Put(bufPtr)
+	}()
+
+	buf := *bufPtr
 	var inToken bool
 	var lastByte byte = '\n'
 	var hasBytes bool

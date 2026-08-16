@@ -1,6 +1,7 @@
 package scanner_test
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"testing"
@@ -106,4 +107,16 @@ func TestCountLinesAndTokens(t *testing.T) {
 			t.Errorf("expected error %v, got %v", expectedErr, err)
 		}
 	})
+}
+
+func BenchmarkCountLinesAndTokens(b *testing.B) {
+	data := []byte(strings.Repeat("package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello world\")\n}\n", 100))
+	r := bytes.NewReader(data)
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for b.Loop() {
+		r.Reset(data)
+		_, _, _ = scanner.CountLinesAndTokens(r)
+	}
 }
