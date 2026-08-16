@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -135,3 +136,196 @@ func (d dummyFileInfo) Mode() fs.FileMode  { return 0644 }
 func (d dummyFileInfo) ModTime() time.Time { return time.Now() }
 func (d dummyFileInfo) IsDir() bool        { return false }
 func (d dummyFileInfo) Sys() any           { return nil }
+
+type failingTokenizer struct {
+	err error
+}
+
+func (f *failingTokenizer) CountTokens(r io.Reader) (int, error) {
+	return 0, f.err
+}
+
+func TestExtractFileMetrics_ErrorHooks(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "test.txt")
+	_ = os.WriteFile(filePath, []byte("some content"), 0644)
+
+	t.Run("CountLines error", func(t *testing.T) {
+		origOpen := openFileHook
+		defer func() { openFileHook = origOpen }()
+
+		// Mock open returning a closed file or pipe that fails on read
+		r, w, _ := os.Pipe()
+		_ = w.Close()
+		_ = r.Close()
+		openFileHook = func(name string) (*os.File, error) {
+			return r, nil
+		}
+
+		_, _, err := ExtractFileMetrics(filePath, nil)
+		if err == nil {
+			t.Fatal("expected error on read failure in CountLines, got nil")
+		}
+	})
+
+	t.Run("Seek error hook", func(t *testing.T) {
+		origSeek := seekFileHook
+		defer func() { seekFileHook = origSeek }()
+
+		seekFileHook = func(f *os.File, offset int64, whence int) (int64, error) {
+			return 0, errors.New("simulated seek failure")
+		}
+
+		_, _, err := ExtractFileMetrics(filePath, nil)
+		if err == nil {
+			t.Fatal("expected error on seek failure, got nil")
+		}
+	})
+
+	t.Run("Tokenizer error", func(t *testing.T) {
+		expectedErr := errors.New("simulated tokenizer error")
+		_, _, err := ExtractFileMetrics(filePath, &failingTokenizer{err: expectedErr})
+		if err == nil || !errors.Is(err, expectedErr) {
+			t.Fatalf("expected tokenizer error %v, got %v", expectedErr, err)
+		}
+	})
+}
+
+func TestWalkPaths_WithComputeMetrics(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "main.go")
+	_ = os.WriteFile(filePath, []byte("package main\n\nfunc main() {}\n"), 0644)
+
+	t.Run("Computes metrics for directory traversal", func(t *testing.T) {
+		ctx := context.Background()
+		var found bool
+		for entry, err := range WalkPaths(ctx, []string{tempDir}, nil, WithComputeMetrics(true), WithTokenizer(NewWhitespaceTokenizer())) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir && entry.Path == filePath {
+				found = true
+				if entry.Lines != 3 {
+					t.Errorf("expected 3 lines, got %d", entry.Lines)
+				}
+				if entry.Tokens != 5 {
+					t.Errorf("expected 5 tokens, got %d", entry.Tokens)
+				}
+				if entry.Extension != ".go" {
+					t.Errorf("expected .go extension, got %q", entry.Extension)
+				}
+				if entry.Size <= 0 {
+					t.Errorf("expected positive size, got %d", entry.Size)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("expected to find main.go in scan")
+		}
+	})
+
+	t.Run("Computes metrics for single file target", func(t *testing.T) {
+		ctx := context.Background()
+		var count int
+		for entry, err := range WalkPaths(ctx, []string{filePath}, nil, WithComputeMetrics(true)) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			count++
+			if entry.Lines != 3 {
+				t.Errorf("expected 3 lines, got %d", entry.Lines)
+			}
+			if entry.Tokens != 5 {
+				t.Errorf("expected 5 tokens, got %d", entry.Tokens)
+			}
+			if entry.Extension != ".go" {
+				t.Errorf("expected .go extension, got %q", entry.Extension)
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected 1 file yielded, got %d", count)
+		}
+	})
+
+	t.Run("Single file metric error yields error and breaks if yield returns false", func(t *testing.T) {
+		origOpen := openFileHook
+		defer func() { openFileHook = origOpen }()
+
+		openFileHook = func(name string) (*os.File, error) {
+			return nil, errors.New("open error")
+		}
+
+		ctx := context.Background()
+		var errCount int
+		for _, err := range WalkPaths(ctx, []string{filePath}, nil, WithComputeMetrics(true)) {
+			if err != nil {
+				errCount++
+				break
+			}
+		}
+		if errCount != 1 {
+			t.Errorf("expected 1 error, got %d", errCount)
+		}
+	})
+
+	t.Run("Single file metric error continues when yield returns true", func(t *testing.T) {
+		origOpen := openFileHook
+		defer func() { openFileHook = origOpen }()
+
+		openFileHook = func(name string) (*os.File, error) {
+			return nil, errors.New("open error")
+		}
+
+		ctx := context.Background()
+		var errCount int
+		for _, err := range WalkPaths(ctx, []string{filePath}, nil, WithComputeMetrics(true)) {
+			if err != nil {
+				errCount++
+			}
+		}
+		if errCount != 1 {
+			t.Errorf("expected 1 error, got %d", errCount)
+		}
+	})
+
+	t.Run("Dir file metric error yields error and continues when yield returns true", func(t *testing.T) {
+		origOpen := openFileHook
+		defer func() { openFileHook = origOpen }()
+
+		openFileHook = func(name string) (*os.File, error) {
+			return nil, errors.New("open error")
+		}
+
+		ctx := context.Background()
+		var errCount int
+		for _, err := range WalkPaths(ctx, []string{tempDir}, nil, WithComputeMetrics(true)) {
+			if err != nil {
+				errCount++
+			}
+		}
+		if errCount != 1 {
+			t.Errorf("expected 1 error, got %d", errCount)
+		}
+	})
+
+	t.Run("Dir file metric error breaks when yield returns false", func(t *testing.T) {
+		origOpen := openFileHook
+		defer func() { openFileHook = origOpen }()
+
+		openFileHook = func(name string) (*os.File, error) {
+			return nil, errors.New("open error")
+		}
+
+		ctx := context.Background()
+		var errCount int
+		for _, err := range WalkPaths(ctx, []string{tempDir}, nil, WithComputeMetrics(true)) {
+			if err != nil {
+				errCount++
+				break
+			}
+		}
+		if errCount != 1 {
+			t.Errorf("expected 1 error, got %d", errCount)
+		}
+	})
+}

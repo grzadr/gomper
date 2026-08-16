@@ -166,13 +166,48 @@ func (f *Filter) ShouldIgnore(name string, relPath string, isDir ...bool) bool {
 }
 
 
+// ScanOptions configures options for directory and file traversal.
+type ScanOptions struct {
+	ComputeMetrics bool
+	Tokenizer      Tokenizer
+}
+
+// ScanOption represents a functional option for customizing path scanning.
+type ScanOption func(*ScanOptions)
+
+// WithComputeMetrics configures whether line and token metrics should be computed for files.
+func WithComputeMetrics(compute bool) ScanOption {
+	return func(o *ScanOptions) {
+		o.ComputeMetrics = compute
+	}
+}
+
+// WithTokenizer sets a custom tokenizer for calculating file tokens during scanning.
+func WithTokenizer(t Tokenizer) ScanOption {
+	return func(o *ScanOptions) {
+		o.Tokenizer = t
+	}
+}
+
 // Hook for directory tree traversal, allowing unit test error injection.
 var walkDirFunc = filepath.WalkDir
 
 // WalkPaths returns an iter.Seq2[Entry, error] iterator (Go range-over-function)
 // that traverses all files and directories specified by paths, filtering out entries
 // that match any active ignore patterns in filter.
-func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[Entry, error] {
+func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...ScanOption) iter.Seq2[Entry, error] {
+	var scanOpts ScanOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&scanOpts)
+		}
+	}
+
+	tokenizer := scanOpts.Tokenizer
+	if tokenizer == nil {
+		tokenizer = DefaultTokenizer()
+	}
+
 	return func(yield func(Entry, error) bool) {
 		for _, root := range paths {
 			cleanedRoot := filepath.Clean(root)
@@ -202,13 +237,30 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 					continue
 				}
 
+				var lines, tokens int
+				if scanOpts.ComputeMetrics {
+					var metricErr error
+					lines, tokens, metricErr = ExtractFileMetrics(cleanedRoot, tokenizer)
+					if metricErr != nil {
+						_ = rc.Close()
+						if !yield(Entry{Path: cleanedRoot, Root: cleanedRoot}, metricErr) {
+							return
+						}
+						continue
+					}
+				}
+
 				entry := Entry{
-					Path:    cleanedRoot,
-					RelPath: filepath.Base(cleanedRoot),
-					Root:    cleanedRoot,
-					Info:    info,
-					IsDir:   false,
-					Content: rc,
+					Path:      cleanedRoot,
+					RelPath:   filepath.Base(cleanedRoot),
+					Root:      cleanedRoot,
+					Info:      info,
+					IsDir:     false,
+					Content:   rc,
+					Extension: filepath.Ext(cleanedRoot),
+					Size:      info.Size(),
+					Lines:     lines,
+					Tokens:    tokens,
 				}
 				if !yield(entry, nil) {
 					_ = rc.Close()
@@ -279,13 +331,30 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 					return nil
 				}
 
+				var lines, tokens int
+				if scanOpts.ComputeMetrics {
+					var metricErr error
+					lines, tokens, metricErr = ExtractFileMetrics(path, tokenizer)
+					if metricErr != nil {
+						_ = rc.Close()
+						if !yield(Entry{Path: path, Root: cleanedRoot}, metricErr) {
+							return fs.SkipAll
+						}
+						return nil
+					}
+				}
+
 				entry := Entry{
-					Path:    path,
-					RelPath: relPath,
-					Root:    cleanedRoot,
-					Info:    fileInfo,
-					IsDir:   false,
-					Content: rc,
+					Path:      path,
+					RelPath:   relPath,
+					Root:      cleanedRoot,
+					Info:      fileInfo,
+					IsDir:     false,
+					Content:   rc,
+					Extension: filepath.Ext(path),
+					Size:      fileInfo.Size(),
+					Lines:     lines,
+					Tokens:    tokens,
 				}
 
 				if !yield(entry, nil) {

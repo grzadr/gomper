@@ -636,5 +636,60 @@ func TestFilter_ShouldIgnore_Direct(t *testing.T) {
 	}
 }
 
+func TestWalkPaths_Metrics(t *testing.T) {
+	tempDir := t.TempDir()
+	docFile := filepath.Join(tempDir, "README.md")
+	docContent := "# Readme Title\n\nSome introductory content here.\n"
+	_ = os.WriteFile(docFile, []byte(docContent), 0644)
+
+	t.Run("Without ComputeMetrics, metrics remain zero", func(t *testing.T) {
+		ctx := context.Background()
+		var found bool
+		for entry, err := range scanner.WalkPaths(ctx, []string{tempDir}, nil) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir && entry.Path == docFile {
+				found = true
+				if entry.Extension != ".md" {
+					t.Errorf("expected extension .md, got %q", entry.Extension)
+				}
+				if entry.Lines != 0 || entry.Tokens != 0 {
+					t.Errorf("expected 0 lines and 0 tokens without metrics option, got lines=%d tokens=%d", entry.Lines, entry.Tokens)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("expected to find README.md in scan")
+		}
+	})
+
+	t.Run("With ComputeMetrics, metrics are accurately populated", func(t *testing.T) {
+		ctx := context.Background()
+		var found bool
+		for entry, err := range scanner.WalkPaths(ctx, []string{tempDir}, nil, scanner.WithComputeMetrics(true)) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir && entry.Path == docFile {
+				found = true
+				if entry.Extension != ".md" {
+					t.Errorf("expected extension .md, got %q", entry.Extension)
+				}
+				if entry.Lines != 3 {
+					t.Errorf("expected 3 lines, got %d", entry.Lines)
+				}
+				if entry.Tokens != 7 {
+					t.Errorf("expected 7 tokens, got %d", entry.Tokens)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("expected to find README.md in scan")
+		}
+	})
+}
+
+
 
 

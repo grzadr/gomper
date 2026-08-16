@@ -27,7 +27,7 @@ func TestService_List_DisplayPathFallback(t *testing.T) {
 	origWalk := walkPathsFunc
 	defer func() { walkPathsFunc = origWalk }()
 
-	walkPathsFunc = func(ctx context.Context, paths []string, filter *scanner.Filter) iter.Seq2[scanner.Entry, error] {
+	walkPathsFunc = func(ctx context.Context, paths []string, filter *scanner.Filter, opts ...scanner.ScanOption) iter.Seq2[scanner.Entry, error] {
 		return func(yield func(scanner.Entry, error) bool) {
 			yield(scanner.Entry{
 				Path:    "/root/empty_rel.go",
