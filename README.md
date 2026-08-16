@@ -73,7 +73,7 @@ List regular files within one or more paths (skipping directory nodes and implic
 ./bin/gomper list ./cmd
 ```
 
-#### Output
+#### Standard Output
 ```
 dump.go
 formats.go
@@ -83,7 +83,40 @@ root.go
 root_test.go
 ```
 
+#### Detailed Tabular Output (`--format detailed`)
+
+Render an aligned table with file path, detected extension, resolved language identifier, size in bytes, line count, and token count (calculated via a single-pass streaming scanner):
+
+```bash
+./bin/gomper list . --format detailed
+```
+
+```text
+FILE                                     EXTENSION  LANGUAGE  SIZE   LINES  TOKENS
+LICENSE                                  -          text      1072   21     169
+Makefile                                 -          makefile  1948   72     268
+README.md                                .md        markdown  13839  397    1836
+cmd/list.go                              .go        go        2661   77     255
+gomper.yaml.example                      .yaml      yaml      670    33     103
+internal/app/app.go                      .go        go        4795   184    536
+internal/scanner/metrics.go              .go        go        924    48     174
+```
+
+| Column | Description |
+| :--- | :--- |
+| `FILE` | Relative file path from the scanned root. |
+| `EXTENSION` | Effective file extension after stripping auxiliary suffixes (e.g. `.yaml.example` $\to$ `.yaml`; `-` for files without extension). |
+| `LANGUAGE` | Resolved programming or markup language identifier (`go`, `makefile`, `markdown`, etc.; `-` if unrecognized). |
+| `SIZE` | File size in bytes. |
+| `LINES` | Total line count computed in a single pass over the file stream. |
+| `TOKENS` | Total whitespace-delimited tokens computed simultaneously with line counting. |
+
 #### Options
+
+- **Output Format** (`--format`): Output format for listing files. Supported values: `standard` (default) or `detailed`.
+  ```bash
+  ./bin/gomper list . --format detailed
+  ```
 
 - **File Name Filter** (`-n`, `--name`): Filter files matching custom regular expressions against their whole base file name (`info.Name()`). Non-matching files are excluded.
   ```bash
@@ -117,7 +150,7 @@ root_test.go
   ./bin/gomper list . --ignore-dotfiles
   ```
 
-- **Detailed Attributes** (`-l`, `--long`): Display type, size, file mode permissions, and path.
+- **Detailed Attributes** (`-l`, `--long`): Display type, size, file mode permissions, and path (standard listing mode).
   ```bash
   ./bin/gomper list ./cmd --long
   ```
@@ -329,10 +362,10 @@ gomper/
 │   └── root_test.go    # In-memory execution unit tests
 ├── internal/
 │   ├── app/            # Core application service & OutputFormat enum
-│   │   ├── app.go      # Service interface and runner logic
-│   │   ├── app_test.go # Service unit test suite (98.7% coverage)
+│   │   ├── app.go      # Service interface, streaming runner logic & ListOptions
+│   │   ├── app_test.go # Service integration unit test suite
 │   │   ├── format.go   # OutputFormat enum definition & pflag binding
-│   │   └── format_test.go
+│   │   └── formatter.go # Streaming ListFormatter (Standard & Detailed tabwriter)
 │   ├── config/         # Strongly-typed configuration schema
 │   │   ├── config.go   # Config struct & profile helpers
 │   │   └── config_test.go
@@ -342,14 +375,14 @@ gomper/
 │   ├── filetx/         # Crash-safe atomic transactional file writer
 │   │   ├── filetx.go   # WriteAtomically with fsync and directory sync
 │   │   └── filetx_test.go
-│   ├── scanner/        # File scanner range-over-function iterator & embedded gitignore profiles
-│   │   ├── extensions.go # Extension-to-language lookup
-│   │   ├── extensions_test.go
+│   ├── scanner/        # File scanner range-over-function iterator & embedded profiles
+│   │   ├── binary.go   # Bounded 8KB content sniffing for binary detection
+│   │   ├── extensions.go # Extension & language resolver with auxiliary suffix stripping
+│   │   ├── metrics.go  # Single-pass line and whitespace token counting
 │   │   ├── profile.go  # Profile loader & gitignore-to-regex converter
 │   │   ├── profiles/   # Embedded gitignore template files (generic, go, node, python, terraform, etc.)
-│   │   ├── profile_test.go
 │   │   ├── scanner.go  # WalkPaths (iter.Seq2[Entry, error])
-│   │   └── scanner_test.go
+│   │   └── tokenizer.go # Tokenizer interface and WhitespaceTokenizer
 │   └── setup/          # Application setup, slog structured logger & signal context
 │       ├── setup.go    # App struct, LevelVar logger & NewContext factory
 │       └── setup_test.go
