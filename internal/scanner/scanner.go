@@ -15,13 +15,20 @@ import (
 
 // Entry encapsulates metadata and fs.FileInfo for a scanned file or directory.
 type Entry struct {
-	Path    string
-	RelPath string
-	Root    string
-	Info    fs.FileInfo
-	IsDir   bool
-	Content io.ReadCloser
+	Path      string
+	RelPath   string
+	Root      string
+	Info      fs.FileInfo
+	IsDir     bool
+	Content   io.ReadCloser
+	Extension string
+	Size      int64
+	Lines     int
+	Tokens    int
 }
+
+// FileResult is an alias for Entry representing a scanned file result.
+type FileResult = Entry
 
 // FilterOptions holds configuration options for building a Filter.
 type FilterOptions struct {
