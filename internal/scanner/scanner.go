@@ -203,11 +203,6 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 		}
 	}
 
-	tokenizer := scanOpts.Tokenizer
-	if tokenizer == nil {
-		tokenizer = DefaultTokenizer()
-	}
-
 	return func(yield func(Entry, error) bool) {
 		for _, root := range paths {
 			cleanedRoot := filepath.Clean(root)
@@ -240,14 +235,15 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 				var lines, tokens int
 				if scanOpts.ComputeMetrics {
 					var metricErr error
-					lines, tokens, metricErr = ExtractFileMetrics(cleanedRoot, tokenizer)
+					lines, tokens, metricErr = CountLinesAndTokens(rc)
+					_ = rc.Close()
 					if metricErr != nil {
-						_ = rc.Close()
 						if !yield(Entry{Path: cleanedRoot, Root: cleanedRoot}, metricErr) {
 							return
 						}
 						continue
 					}
+					rc = nil
 				}
 
 				entry := Entry{
@@ -263,10 +259,14 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 					Tokens:    tokens,
 				}
 				if !yield(entry, nil) {
-					_ = rc.Close()
+					if rc != nil {
+						_ = rc.Close()
+					}
 					return
 				}
-				_ = rc.Close()
+				if rc != nil {
+					_ = rc.Close()
+				}
 				continue
 			}
 
@@ -334,14 +334,15 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 				var lines, tokens int
 				if scanOpts.ComputeMetrics {
 					var metricErr error
-					lines, tokens, metricErr = ExtractFileMetrics(path, tokenizer)
+					lines, tokens, metricErr = CountLinesAndTokens(rc)
+					_ = rc.Close()
 					if metricErr != nil {
-						_ = rc.Close()
 						if !yield(Entry{Path: path, Root: cleanedRoot}, metricErr) {
 							return fs.SkipAll
 						}
 						return nil
 					}
+					rc = nil
 				}
 
 				entry := Entry{
@@ -358,10 +359,14 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 				}
 
 				if !yield(entry, nil) {
-					_ = rc.Close()
+					if rc != nil {
+						_ = rc.Close()
+					}
 					return fs.SkipAll
 				}
-				_ = rc.Close()
+				if rc != nil {
+					_ = rc.Close()
+				}
 				return nil
 			})
 

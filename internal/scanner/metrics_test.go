@@ -2,123 +2,108 @@ package scanner_test
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/grzadr/gomper/internal/scanner"
 )
 
-type lineErrorReader struct {
+type metricErrorReader struct {
 	err error
 }
 
-func (e *lineErrorReader) Read(p []byte) (n int, err error) {
+func (e *metricErrorReader) Read(p []byte) (n int, err error) {
 	return 0, e.err
 }
 
-func TestCountLines(t *testing.T) {
+func TestCountLinesAndTokens(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		wantLines int
-		wantErr   bool
+		name       string
+		input      string
+		wantLines  int
+		wantTokens int
+		wantErr    bool
 	}{
 		{
-			name:      "Empty input",
-			input:     "",
-			wantLines: 0,
+			name:       "Empty input",
+			input:      "",
+			wantLines:  0,
+			wantTokens: 0,
 		},
 		{
-			name:      "Single line with newline",
-			input:     "hello\n",
-			wantLines: 1,
+			name:       "Whitespace only",
+			input:      "   \t\n\r\v\f  ",
+			wantLines:  2,
+			wantTokens: 0,
 		},
 		{
-			name:      "Single line without newline",
-			input:     "hello",
-			wantLines: 1,
+			name:       "Single line with newline",
+			input:      "hello world\n",
+			wantLines:  1,
+			wantTokens: 2,
 		},
 		{
-			name:      "Multiple lines with trailing newline",
-			input:     "line 1\nline 2\nline 3\n",
-			wantLines: 3,
+			name:       "Single line without newline",
+			input:      "hello world",
+			wantLines:  1,
+			wantTokens: 2,
 		},
 		{
-			name:      "Multiple lines without trailing newline",
-			input:     "line 1\nline 2\nline 3",
-			wantLines: 3,
+			name:       "Multiple lines with trailing newline",
+			input:      "line 1: quick brown fox\nline 2: jumps over lazy dog\n",
+			wantLines:  2,
+			wantTokens: 11,
 		},
 		{
-			name:      "Empty lines with newlines",
-			input:     "\n\n\n",
-			wantLines: 3,
+			name:       "Multiple lines without trailing newline",
+			input:      "line 1: alpha\nline 2: beta\nline 3: gamma",
+			wantLines:  3,
+			wantTokens: 9,
 		},
 		{
-			name:      "Large input across buffer boundary",
-			input:     strings.Repeat("line with some text\n", 5000),
-			wantLines: 5000,
+			name:       "Empty lines with newlines",
+			input:      "\n\n\n",
+			wantLines:  3,
+			wantTokens: 0,
+		},
+		{
+			name:       "Large input across buffer boundary",
+			input:      strings.Repeat("word1 word2 word3\n", 5000),
+			wantLines:  5000,
+			wantTokens: 15000,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := scanner.CountLines(strings.NewReader(tt.input))
+			lines, tokens, err := scanner.CountLinesAndTokens(strings.NewReader(tt.input))
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("CountLines() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("CountLinesAndTokens() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if got != tt.wantLines {
-				t.Errorf("CountLines() = %d, want %d", got, tt.wantLines)
+			if lines != tt.wantLines {
+				t.Errorf("CountLinesAndTokens() lines = %d, want %d", lines, tt.wantLines)
+			}
+			if tokens != tt.wantTokens {
+				t.Errorf("CountLinesAndTokens() tokens = %d, want %d", tokens, tt.wantTokens)
 			}
 		})
 	}
 
 	t.Run("Nil reader", func(t *testing.T) {
-		got, err := scanner.CountLines(nil)
+		lines, tokens, err := scanner.CountLinesAndTokens(nil)
 		if err != nil {
 			t.Fatalf("unexpected error for nil reader: %v", err)
 		}
-		if got != 0 {
-			t.Errorf("expected 0 lines for nil reader, got %d", got)
+		if lines != 0 || tokens != 0 {
+			t.Errorf("expected 0 lines and 0 tokens for nil reader, got lines=%d tokens=%d", lines, tokens)
 		}
 	})
 
 	t.Run("Reader error propagation", func(t *testing.T) {
-		expectedErr := errors.New("read failed")
-		_, err := scanner.CountLines(&lineErrorReader{err: expectedErr})
+		expectedErr := errors.New("stream read failure")
+		_, _, err := scanner.CountLinesAndTokens(&metricErrorReader{err: expectedErr})
 		if !errors.Is(err, expectedErr) {
 			t.Errorf("expected error %v, got %v", expectedErr, err)
-		}
-	})
-}
-
-func TestExtractFileMetrics(t *testing.T) {
-	tempDir := t.TempDir()
-	filePath := filepath.Join(tempDir, "sample.txt")
-	content := "Line 1: quick brown fox\nLine 2: jumps over lazy dog\n"
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
-		t.Fatalf("failed to create sample file: %v", err)
-	}
-
-	t.Run("Extracts lines and tokens correctly with default tokenizer", func(t *testing.T) {
-		lines, tokens, err := scanner.ExtractFileMetrics(filePath, nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if lines != 2 {
-			t.Errorf("expected 2 lines, got %d", lines)
-		}
-		// "Line" "1:" "quick" "brown" "fox" (5) + "Line" "2:" "jumps" "over" "lazy" "dog" (6) = 11
-		if tokens != 11 {
-			t.Errorf("expected 11 tokens, got %d", tokens)
-		}
-	})
-
-	t.Run("Fails on non-existent file", func(t *testing.T) {
-		_, _, err := scanner.ExtractFileMetrics(filepath.Join(tempDir, "non_existent.txt"), nil)
-		if err == nil {
-			t.Fatal("expected error for non-existent file, got nil")
 		}
 	})
 }
