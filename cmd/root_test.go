@@ -392,7 +392,9 @@ func TestCLI_ListCommand(t *testing.T) {
 	t.Run("Executes list with --format detailed", func(t *testing.T) {
 		tempDir := t.TempDir()
 		codeFile := filepath.Join(tempDir, "main.go")
+		makeFile := filepath.Join(tempDir, "Makefile")
 		_ = os.WriteFile(codeFile, []byte("package main\n\nfunc main() {}\n"), 0644)
+		_ = os.WriteFile(makeFile, []byte("all:\n\t@echo hi\n"), 0644)
 
 		rootCmd := cmd.NewRootCommand(nil)
 		outBuf := new(bytes.Buffer)
@@ -406,11 +408,14 @@ func TestCLI_ListCommand(t *testing.T) {
 		}
 
 		output := outBuf.String()
-		if !strings.Contains(output, "FILE") || !strings.Contains(output, "EXTENSION") || !strings.Contains(output, "SIZE") || !strings.Contains(output, "LINES") || !strings.Contains(output, "TOKENS") {
-			t.Errorf("expected detailed headers in output, got: %q", output)
+		if !strings.Contains(output, "FILE") || !strings.Contains(output, "EXTENSION") || !strings.Contains(output, "LANGUAGE") || !strings.Contains(output, "SIZE") || !strings.Contains(output, "LINES") || !strings.Contains(output, "TOKENS") {
+			t.Errorf("expected detailed headers with LANGUAGE in output, got: %q", output)
 		}
-		if !strings.Contains(output, "main.go") || !strings.Contains(output, ".go") {
-			t.Errorf("expected main.go and .go in detailed output, got: %q", output)
+		if !strings.Contains(output, "main.go") || !strings.Contains(output, ".go") || !strings.Contains(output, "go") {
+			t.Errorf("expected main.go, .go and go in detailed output, got: %q", output)
+		}
+		if !strings.Contains(output, "Makefile") || !strings.Contains(output, "makefile") || !strings.Contains(output, "-") {
+			t.Errorf("expected Makefile, makefile language, and '-' placeholder in detailed output, got: %q", output)
 		}
 	})
 
