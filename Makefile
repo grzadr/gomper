@@ -20,15 +20,15 @@ build: clean lint check-coverage
 # Run tests
 test:
 	@echo "Running tests..."
-	go test ./...
+	go test -race ./...
 
 # Run tests with verbose output
 test-verbose:
 	@echo "Running tests (verbose)..."
-	go test -v ./...
+	go test -v -race ./...
 
 # Run tests with coverage
-test-coverage:
+test-coverage: test
 	@echo "Running tests with coverage..."
 	@mkdir -p $(COVERAGE_DIR)
 	go test -coverprofile=$(COVERAGE_FILE) ./...

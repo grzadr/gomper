@@ -1,0 +1,16 @@
+{
+  "validate_build": {
+    "PostToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "make build",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
