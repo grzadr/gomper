@@ -636,5 +636,117 @@ func TestFilter_ShouldIgnore_Direct(t *testing.T) {
 	}
 }
 
+func TestWalkPaths_Metrics(t *testing.T) {
+	tempDir := t.TempDir()
+	docFile := filepath.Join(tempDir, "README.md")
+	docContent := "# Readme Title\n\nSome introductory content here.\n"
+	_ = os.WriteFile(docFile, []byte(docContent), 0644)
+
+	t.Run("Without ComputeMetrics, metrics remain zero", func(t *testing.T) {
+		ctx := context.Background()
+		var found bool
+		for entry, err := range scanner.WalkPaths(ctx, []string{tempDir}, nil) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir && entry.Path == docFile {
+				found = true
+				if entry.Extension != ".md" {
+					t.Errorf("expected extension .md, got %q", entry.Extension)
+				}
+				if entry.Lines != 0 || entry.Tokens != 0 {
+					t.Errorf("expected 0 lines and 0 tokens without metrics option, got lines=%d tokens=%d", entry.Lines, entry.Tokens)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("expected to find README.md in scan")
+		}
+	})
+
+	t.Run("With ComputeMetrics, metrics are accurately populated", func(t *testing.T) {
+		ctx := context.Background()
+		var found bool
+		for entry, err := range scanner.WalkPaths(ctx, []string{tempDir}, nil, scanner.WithComputeMetrics(true)) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir && entry.Path == docFile {
+				found = true
+				if entry.Extension != ".md" {
+					t.Errorf("expected extension .md, got %q", entry.Extension)
+				}
+				if entry.Language != "markdown" {
+					t.Errorf("expected language markdown, got %q", entry.Language)
+				}
+				if entry.Lines != 3 {
+					t.Errorf("expected 3 lines, got %d", entry.Lines)
+				}
+				if entry.Tokens != 7 {
+					t.Errorf("expected 7 tokens, got %d", entry.Tokens)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("expected to find README.md in scan")
+		}
+	})
+
+	t.Run("Resolves language, auxiliary extensions and placeholders for special files", func(t *testing.T) {
+		makeFile := filepath.Join(tempDir, "Makefile")
+		yamlExFile := filepath.Join(tempDir, "config.yaml.example")
+		unknownFile := filepath.Join(tempDir, "data.unknownext")
+		_ = os.WriteFile(makeFile, []byte("all:\n\t@echo hi\n"), 0644)
+		_ = os.WriteFile(yamlExFile, []byte("key: value\n"), 0644)
+		_ = os.WriteFile(unknownFile, []byte("custom content\n"), 0644)
+
+		ctx := context.Background()
+		results := make(map[string]scanner.Entry)
+		for entry, err := range scanner.WalkPaths(ctx, []string{tempDir}, nil) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir {
+				results[filepath.Base(entry.Path)] = entry
+			}
+		}
+
+		if e, ok := results["Makefile"]; !ok {
+			t.Errorf("expected Makefile in results")
+		} else {
+			if e.Extension != "-" {
+				t.Errorf("expected '-' extension for Makefile, got %q", e.Extension)
+			}
+			if e.Language != "makefile" {
+				t.Errorf("expected 'makefile' language for Makefile, got %q", e.Language)
+			}
+		}
+
+		if e, ok := results["config.yaml.example"]; !ok {
+			t.Errorf("expected config.yaml.example in results")
+		} else {
+			if e.Extension != ".yaml" {
+				t.Errorf("expected '.yaml' extension for config.yaml.example, got %q", e.Extension)
+			}
+			if e.Language != "yaml" {
+				t.Errorf("expected 'yaml' language for config.yaml.example, got %q", e.Language)
+			}
+		}
+
+		if e, ok := results["data.unknownext"]; !ok {
+			t.Errorf("expected data.unknownext in results")
+		} else {
+			if e.Extension != ".unknownext" {
+				t.Errorf("expected '.unknownext' extension, got %q", e.Extension)
+			}
+			if e.Language != "-" {
+				t.Errorf("expected '-' language for unknown extension, got %q", e.Language)
+			}
+		}
+	})
+}
+
+
+
 
 

@@ -3,6 +3,8 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"iter"
 	"os"
 	"strings"
@@ -27,7 +29,7 @@ func TestService_List_DisplayPathFallback(t *testing.T) {
 	origWalk := walkPathsFunc
 	defer func() { walkPathsFunc = origWalk }()
 
-	walkPathsFunc = func(ctx context.Context, paths []string, filter *scanner.Filter) iter.Seq2[scanner.Entry, error] {
+	walkPathsFunc = func(ctx context.Context, paths []string, filter *scanner.Filter, opts ...scanner.ScanOption) iter.Seq2[scanner.Entry, error] {
 		return func(yield func(scanner.Entry, error) bool) {
 			yield(scanner.Entry{
 				Path:    "/root/empty_rel.go",
@@ -69,4 +71,66 @@ func TestService_List_DisplayPathFallback(t *testing.T) {
 	if !strings.Contains(outputLong, "/root/empty_rel.go") || !strings.Contains(outputLong, "42 B") {
 		t.Errorf("expected long format line with full Path fallback, got output:\n%s", outputLong)
 	}
+}
+
+type failingFormatter struct {
+	writeHeaderErr error
+	formatEntryErr error
+	flushErr       error
+}
+
+func (f *failingFormatter) WriteHeader(w io.Writer) error {
+	return f.writeHeaderErr
+}
+
+func (f *failingFormatter) FormatEntry(w io.Writer, entry scanner.Entry) error {
+	return f.formatEntryErr
+}
+
+func (f *failingFormatter) Flush(w io.Writer) error {
+	return f.flushErr
+}
+
+func (f *failingFormatter) RequiresMetrics() bool {
+	return false
+}
+
+func TestService_List_FormatterErrors(t *testing.T) {
+	svc := NewService(nil)
+
+	t.Run("WriteHeader error", func(t *testing.T) {
+		expectedErr := errors.New("write header failure")
+		opts := ListOptions{
+			Formatter: &failingFormatter{writeHeaderErr: expectedErr},
+		}
+
+		err := svc.List(context.Background(), new(bytes.Buffer), []string{"."}, opts)
+		if err == nil || !errors.Is(err, expectedErr) {
+			t.Fatalf("expected header error %v, got %v", expectedErr, err)
+		}
+	})
+
+	t.Run("FormatEntry error", func(t *testing.T) {
+		expectedErr := errors.New("format entry failure")
+		opts := ListOptions{
+			Formatter: &failingFormatter{formatEntryErr: expectedErr},
+		}
+
+		err := svc.List(context.Background(), new(bytes.Buffer), []string{"."}, opts)
+		if err == nil || !errors.Is(err, expectedErr) {
+			t.Fatalf("expected entry error %v, got %v", expectedErr, err)
+		}
+	})
+
+	t.Run("Flush error", func(t *testing.T) {
+		expectedErr := errors.New("flush failure")
+		opts := ListOptions{
+			Formatter: &failingFormatter{flushErr: expectedErr},
+		}
+
+		err := svc.List(context.Background(), new(bytes.Buffer), []string{"."}, opts)
+		if err == nil || !errors.Is(err, expectedErr) {
+			t.Fatalf("expected flush error %v, got %v", expectedErr, err)
+		}
+	})
 }

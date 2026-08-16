@@ -5,7 +5,7 @@ BINARY_NAME=gomper
 BIN_DIR=bin
 COVERAGE_DIR=coverage
 COVERAGE_FILE=$(COVERAGE_DIR)/coverage.out
-MIN_COVERAGE=90.0
+MIN_COVERAGE=95.0
 
 # Default target
 all: build
@@ -20,15 +20,15 @@ build: clean lint check-coverage
 # Run tests
 test:
 	@echo "Running tests..."
-	go test ./...
+	go test -race ./...
 
 # Run tests with verbose output
 test-verbose:
 	@echo "Running tests (verbose)..."
-	go test -v ./...
+	go test -v -race ./...
 
 # Run tests with coverage
-test-coverage:
+test-coverage: test
 	@echo "Running tests with coverage..."
 	@mkdir -p $(COVERAGE_DIR)
 	go test -coverprofile=$(COVERAGE_FILE) ./...

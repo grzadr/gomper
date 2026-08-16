@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -135,3 +136,162 @@ func (d dummyFileInfo) Mode() fs.FileMode  { return 0644 }
 func (d dummyFileInfo) ModTime() time.Time { return time.Now() }
 func (d dummyFileInfo) IsDir() bool        { return false }
 func (d dummyFileInfo) Sys() any           { return nil }
+
+func TestWalkPaths_WithComputeMetrics(t *testing.T) {
+	tempDir := t.TempDir()
+	filePath := filepath.Join(tempDir, "main.go")
+	_ = os.WriteFile(filePath, []byte("package main\n\nfunc main() {}\n"), 0644)
+
+	t.Run("Computes metrics for directory traversal", func(t *testing.T) {
+		ctx := context.Background()
+		var found bool
+		for entry, err := range WalkPaths(ctx, []string{tempDir}, nil, WithComputeMetrics(true), WithTokenizer(NewWhitespaceTokenizer())) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir && entry.Path == filePath {
+				found = true
+				if entry.Lines != 3 {
+					t.Errorf("expected 3 lines, got %d", entry.Lines)
+				}
+				if entry.Tokens != 5 {
+					t.Errorf("expected 5 tokens, got %d", entry.Tokens)
+				}
+				if entry.Extension != ".go" {
+					t.Errorf("expected .go extension, got %q", entry.Extension)
+				}
+				if entry.Size <= 0 {
+					t.Errorf("expected positive size, got %d", entry.Size)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("expected to find main.go in scan")
+		}
+	})
+
+	t.Run("Computes metrics for single file target", func(t *testing.T) {
+		ctx := context.Background()
+		var count int
+		for entry, err := range WalkPaths(ctx, []string{filePath}, nil, WithComputeMetrics(true)) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			count++
+			if entry.Lines != 3 {
+				t.Errorf("expected 3 lines, got %d", entry.Lines)
+			}
+			if entry.Tokens != 5 {
+				t.Errorf("expected 5 tokens, got %d", entry.Tokens)
+			}
+			if entry.Extension != ".go" {
+				t.Errorf("expected .go extension, got %q", entry.Extension)
+			}
+			if entry.Language != "go" {
+				t.Errorf("expected go language, got %q", entry.Language)
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected 1 file yielded, got %d", count)
+		}
+	})
+
+	t.Run("Single file target with special filename and unknown extension", func(t *testing.T) {
+		makefilePath := filepath.Join(tempDir, "Makefile")
+		unknownExtPath := filepath.Join(tempDir, "config.customext")
+		_ = os.WriteFile(makefilePath, []byte("all:\n\t@echo hi\n"), 0644)
+		_ = os.WriteFile(unknownExtPath, []byte("key: value\n"), 0644)
+
+		ctx := context.Background()
+		var makefileEntry, unknownEntry Entry
+		for entry, err := range WalkPaths(ctx, []string{makefilePath}, nil) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			makefileEntry = entry
+		}
+		if makefileEntry.Extension != "-" || makefileEntry.Language != "makefile" {
+			t.Errorf("expected '-' extension and 'makefile' language for single Makefile, got ext=%q lang=%q", makefileEntry.Extension, makefileEntry.Language)
+		}
+
+		for entry, err := range WalkPaths(ctx, []string{unknownExtPath}, nil) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			unknownEntry = entry
+		}
+		if unknownEntry.Extension != ".customext" || unknownEntry.Language != "-" {
+			t.Errorf("expected '.customext' extension and '-' language for single custom file, got ext=%q lang=%q", unknownEntry.Extension, unknownEntry.Language)
+		}
+	})
+
+	t.Run("Single file metric computation error handling", func(t *testing.T) {
+		origCount := countLinesAndTokensFunc
+		defer func() { countLinesAndTokensFunc = origCount }()
+
+		expectedErr := errors.New("simulated metric error")
+		countLinesAndTokensFunc = func(r io.Reader) (int, int, error) {
+			return 0, 0, expectedErr
+		}
+
+		ctx := context.Background()
+
+		// Yield returning false breaks early
+		var errCount int
+		for _, err := range WalkPaths(ctx, []string{filePath}, nil, WithComputeMetrics(true)) {
+			if err != nil {
+				errCount++
+				break
+			}
+		}
+		if errCount != 1 {
+			t.Errorf("expected 1 error on single file metric failure with early break, got: %d", errCount)
+		}
+
+		// Yield returning true continues
+		errCount = 0
+		for _, err := range WalkPaths(ctx, []string{filePath}, nil, WithComputeMetrics(true)) {
+			if err != nil {
+				errCount++
+			}
+		}
+		if errCount != 1 {
+			t.Errorf("expected 1 error on single file metric failure with continue, got: %d", errCount)
+		}
+	})
+
+	t.Run("Directory walk metric computation error handling", func(t *testing.T) {
+		origCount := countLinesAndTokensFunc
+		defer func() { countLinesAndTokensFunc = origCount }()
+
+		expectedErr := errors.New("simulated dir metric error")
+		countLinesAndTokensFunc = func(r io.Reader) (int, int, error) {
+			return 0, 0, expectedErr
+		}
+
+		ctx := context.Background()
+
+		// Yield returning false breaks early
+		var errCount int
+		for _, err := range WalkPaths(ctx, []string{tempDir}, nil, WithComputeMetrics(true)) {
+			if err != nil {
+				errCount++
+				break
+			}
+		}
+		if errCount != 1 {
+			t.Errorf("expected 1 error on dir metric failure with early break, got: %d", errCount)
+		}
+
+		// Yield returning true continues
+		errCount = 0
+		for _, err := range WalkPaths(ctx, []string{tempDir}, nil, WithComputeMetrics(true)) {
+			if err != nil {
+				errCount++
+			}
+		}
+		if errCount == 0 {
+			t.Errorf("expected at least 1 error on dir metric failure with continue, got: %d", errCount)
+		}
+	})
+}

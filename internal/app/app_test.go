@@ -90,6 +90,30 @@ func TestService_List(t *testing.T) {
 		}
 	})
 
+	t.Run("List with DetailedFormatter option", func(t *testing.T) {
+		tempDir := t.TempDir()
+		file1 := filepath.Join(tempDir, "main.go")
+		_ = os.WriteFile(file1, []byte("package main\n\nfunc main() {}\n"), 0644)
+
+		outBuf := new(bytes.Buffer)
+		opts := app.ListOptions{
+			Formatter: app.NewDetailedFormatter(),
+		}
+
+		err := svc.List(context.Background(), outBuf, []string{tempDir}, opts)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := outBuf.String()
+		if !strings.Contains(output, "FILE") || !strings.Contains(output, "EXTENSION") || !strings.Contains(output, "LANGUAGE") || !strings.Contains(output, "SIZE") || !strings.Contains(output, "LINES") || !strings.Contains(output, "TOKENS") {
+			t.Errorf("expected table headers with LANGUAGE in detailed format output, got: %q", output)
+		}
+		if !strings.Contains(output, "main.go") || !strings.Contains(output, ".go") || !strings.Contains(output, "go") {
+			t.Errorf("expected main.go row with language in detailed format output, got: %q", output)
+		}
+	})
+
 	t.Run("List with Profiles option", func(t *testing.T) {
 		tempDir := t.TempDir()
 		goFile := filepath.Join(tempDir, "main.go")

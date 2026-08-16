@@ -11,6 +11,7 @@ import (
 // NewListCommand creates and initializes the list subcommand.
 func NewListCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 	var longFormat bool
+	var formatFlag string
 	var localIgnore []string
 	var localIgnoreDir []string
 	var localNameFilter []string
@@ -21,6 +22,11 @@ func NewListCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 		Short: "List files in the specified directories",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			targetPaths, err := resolvePaths(args, cfg.Paths)
+			if err != nil {
+				return err
+			}
+
+			formatter, err := app.NewListFormatter(formatFlag, longFormat)
 			if err != nil {
 				return err
 			}
@@ -39,6 +45,7 @@ func NewListCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 
 			opts := app.ListOptions{
 				LongFormat:     longFormat,
+				Formatter:      formatter,
 				IgnorePatterns: allIgnore,
 				IgnoreDirs:     allIgnoreDir,
 				IgnoreDotfiles: cfg.IgnoreDotfiles,
@@ -50,6 +57,7 @@ func NewListCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVarP(&longFormat, "long", "l", false, "display detailed file attributes (size, permissions)")
+	cmd.Flags().StringVar(&formatFlag, "format", "standard", "output format for listing files (standard, detailed)")
 	cmd.Flags().StringSliceVarP(&localIgnore, "ignore", "i", nil, "regex patterns to ignore matching files or directories")
 	cmd.Flags().StringSliceVarP(&localIgnoreDir, "ignore-dir", "D", nil, "directory patterns to ignore following gitignore convention (e.g. 'bin', 'coverage')")
 	cmd.Flags().StringSliceVarP(&localNameFilter, "name", "n", nil, "regex patterns to match file names")

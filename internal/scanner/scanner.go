@@ -15,13 +15,21 @@ import (
 
 // Entry encapsulates metadata and fs.FileInfo for a scanned file or directory.
 type Entry struct {
-	Path    string
-	RelPath string
-	Root    string
-	Info    fs.FileInfo
-	IsDir   bool
-	Content io.ReadCloser
+	Path      string
+	RelPath   string
+	Root      string
+	Info      fs.FileInfo
+	IsDir     bool
+	Content   io.ReadCloser
+	Extension string
+	Language  string
+	Size      int64
+	Lines     int
+	Tokens    int
 }
+
+// FileResult is an alias for Entry representing a scanned file result.
+type FileResult = Entry
 
 // FilterOptions holds configuration options for building a Filter.
 type FilterOptions struct {
@@ -159,13 +167,46 @@ func (f *Filter) ShouldIgnore(name string, relPath string, isDir ...bool) bool {
 }
 
 
-// Hook for directory tree traversal, allowing unit test error injection.
-var walkDirFunc = filepath.WalkDir
+// ScanOptions configures options for directory and file traversal.
+type ScanOptions struct {
+	ComputeMetrics bool
+	Tokenizer      Tokenizer
+}
+
+// ScanOption represents a functional option for customizing path scanning.
+type ScanOption func(*ScanOptions)
+
+// WithComputeMetrics configures whether line and token metrics should be computed for files.
+func WithComputeMetrics(compute bool) ScanOption {
+	return func(o *ScanOptions) {
+		o.ComputeMetrics = compute
+	}
+}
+
+// WithTokenizer sets a custom tokenizer for calculating file tokens during scanning.
+func WithTokenizer(t Tokenizer) ScanOption {
+	return func(o *ScanOptions) {
+		o.Tokenizer = t
+	}
+}
+
+// Hooks for file operations and traversal, allowing unit test error injection.
+var (
+	walkDirFunc             = filepath.WalkDir
+	countLinesAndTokensFunc = CountLinesAndTokens
+)
 
 // WalkPaths returns an iter.Seq2[Entry, error] iterator (Go range-over-function)
 // that traverses all files and directories specified by paths, filtering out entries
 // that match any active ignore patterns in filter.
-func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[Entry, error] {
+func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...ScanOption) iter.Seq2[Entry, error] {
+	var scanOpts ScanOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&scanOpts)
+		}
+	}
+
 	return func(yield func(Entry, error) bool) {
 		for _, root := range paths {
 			cleanedRoot := filepath.Clean(root)
@@ -195,19 +236,56 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 					continue
 				}
 
+				var lines, tokens int
+				if scanOpts.ComputeMetrics {
+					var metricErr error
+					lines, tokens, metricErr = countLinesAndTokensFunc(rc)
+					_ = rc.Close()
+					if metricErr != nil {
+						if !yield(Entry{Path: cleanedRoot, Root: cleanedRoot}, metricErr) {
+							return
+						}
+						continue
+					}
+					rc = nil
+				}
+
+				lang, known := LookupLanguage(cleanedRoot)
+				stripped := StripAuxiliaryExtensions(cleanedRoot)
+				ext := filepath.Ext(stripped)
+
+				displayExt := ext
+				if displayExt == "" {
+					displayExt = "-"
+				}
+
+				displayLang := lang
+				if !known || displayLang == "" {
+					displayLang = "-"
+				}
+
 				entry := Entry{
-					Path:    cleanedRoot,
-					RelPath: filepath.Base(cleanedRoot),
-					Root:    cleanedRoot,
-					Info:    info,
-					IsDir:   false,
-					Content: rc,
+					Path:      cleanedRoot,
+					RelPath:   filepath.Base(cleanedRoot),
+					Root:      cleanedRoot,
+					Info:      info,
+					IsDir:     false,
+					Content:   rc,
+					Extension: displayExt,
+					Language:  displayLang,
+					Size:      info.Size(),
+					Lines:     lines,
+					Tokens:    tokens,
 				}
 				if !yield(entry, nil) {
-					_ = rc.Close()
+					if rc != nil {
+						_ = rc.Close()
+					}
 					return
 				}
-				_ = rc.Close()
+				if rc != nil {
+					_ = rc.Close()
+				}
 				continue
 			}
 
@@ -272,20 +350,57 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter) iter.Seq2[En
 					return nil
 				}
 
+				var lines, tokens int
+				if scanOpts.ComputeMetrics {
+					var metricErr error
+					lines, tokens, metricErr = countLinesAndTokensFunc(rc)
+					_ = rc.Close()
+					if metricErr != nil {
+						if !yield(Entry{Path: path, Root: cleanedRoot}, metricErr) {
+							return fs.SkipAll
+						}
+						return nil
+					}
+					rc = nil
+				}
+
+				lang, known := LookupLanguage(path)
+				stripped := StripAuxiliaryExtensions(path)
+				ext := filepath.Ext(stripped)
+
+				displayExt := ext
+				if displayExt == "" {
+					displayExt = "-"
+				}
+
+				displayLang := lang
+				if !known || displayLang == "" {
+					displayLang = "-"
+				}
+
 				entry := Entry{
-					Path:    path,
-					RelPath: relPath,
-					Root:    cleanedRoot,
-					Info:    fileInfo,
-					IsDir:   false,
-					Content: rc,
+					Path:      path,
+					RelPath:   relPath,
+					Root:      cleanedRoot,
+					Info:      fileInfo,
+					IsDir:     false,
+					Content:   rc,
+					Extension: displayExt,
+					Language:  displayLang,
+					Size:      fileInfo.Size(),
+					Lines:     lines,
+					Tokens:    tokens,
 				}
 
 				if !yield(entry, nil) {
-					_ = rc.Close()
+					if rc != nil {
+						_ = rc.Close()
+					}
 					return fs.SkipAll
 				}
-				_ = rc.Close()
+				if rc != nil {
+					_ = rc.Close()
+				}
 				return nil
 			})
 
