@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -28,6 +29,11 @@ func TestStandardFormatter(t *testing.T) {
 			t.Errorf("expected RequiresMetrics to be false")
 		}
 
+		var buf bytes.Buffer
+		if err := f.WriteHeader(&buf); err != nil {
+			t.Fatalf("unexpected WriteHeader error: %v", err)
+		}
+
 		entries := []scanner.Entry{
 			{Path: "/root/file1.go", RelPath: "file1.go"},
 			{Path: "/root/file2.md", RelPath: "file2.md"},
@@ -35,19 +41,25 @@ func TestStandardFormatter(t *testing.T) {
 			{Path: "/root/dot_rel.txt", RelPath: "."},
 		}
 
-		out, err := f.Format(entries)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		for _, e := range entries {
+			if err := f.FormatEntry(&buf, e); err != nil {
+				t.Fatalf("unexpected FormatEntry error: %v", err)
+			}
+		}
+
+		if err := f.Flush(&buf); err != nil {
+			t.Fatalf("unexpected Flush error: %v", err)
 		}
 
 		expected := "file1.go\nfile2.md\n/root/empty_rel.txt\n/root/dot_rel.txt\n"
-		if out != expected {
-			t.Errorf("expected:\n%q\ngot:\n%q", expected, out)
+		if buf.String() != expected {
+			t.Errorf("expected:\n%q\ngot:\n%q", expected, buf.String())
 		}
 	})
 
 	t.Run("Long format output with file attributes", func(t *testing.T) {
 		f := app.NewStandardFormatter(true)
+		var buf bytes.Buffer
 		entries := []scanner.Entry{
 			{
 				Path:    "/root/file1.go",
@@ -63,11 +75,13 @@ func TestStandardFormatter(t *testing.T) {
 			},
 		}
 
-		out, err := f.Format(entries)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		for _, e := range entries {
+			if err := f.FormatEntry(&buf, e); err != nil {
+				t.Fatalf("unexpected FormatEntry error: %v", err)
+			}
 		}
 
+		out := buf.String()
 		if !strings.Contains(out, "FILE        1024 B  -rw-r--r--  file1.go") {
 			t.Errorf("expected long format line for file1.go, got:\n%s", out)
 		}
@@ -84,21 +98,28 @@ func TestDetailedFormatter(t *testing.T) {
 	}
 
 	t.Run("Empty entries renders header", func(t *testing.T) {
-		out, err := f.Format(nil)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		var buf bytes.Buffer
+		if err := f.WriteHeader(&buf); err != nil {
+			t.Fatalf("unexpected WriteHeader error: %v", err)
 		}
-		if !strings.Contains(out, "FILE") || !strings.Contains(out, "EXTENSION") || !strings.Contains(out, "SIZE") || !strings.Contains(out, "LINES") || !strings.Contains(out, "TOKENS") {
+		if err := f.Flush(&buf); err != nil {
+			t.Fatalf("unexpected Flush error: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "FILE") || !strings.Contains(out, "EXTENSION") || !strings.Contains(out, "LANGUAGE") || !strings.Contains(out, "SIZE") || !strings.Contains(out, "LINES") || !strings.Contains(out, "TOKENS") {
 			t.Errorf("expected header in output, got:\n%s", out)
 		}
 	})
 
 	t.Run("Formats entries in aligned tabular format with fallbacks", func(t *testing.T) {
+		formatter := app.NewDetailedFormatter()
+		var buf bytes.Buffer
 		entries := []scanner.Entry{
 			{
 				Path:      "/root/main.go",
 				RelPath:   "main.go",
 				Extension: ".go",
+				Language:  "go",
 				Size:      250,
 				Lines:     20,
 				Tokens:    45,
@@ -107,30 +128,56 @@ func TestDetailedFormatter(t *testing.T) {
 				Path:      "/root/nested/doc.md",
 				RelPath:   "",
 				Extension: "",
+				Language:  "",
 				Size:      0,
 				Info:      dummyFileInfo{mode: 0644},
 				Lines:     80,
 				Tokens:    300,
 			},
-			{
-				Path:      "",
-				RelPath:   "",
-				Extension: "",
-				Size:      0,
-				Info:      nil,
-			},
 		}
 
-		out, err := f.Format(entries)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+		for _, e := range entries {
+			if err := formatter.FormatEntry(&buf, e); err != nil {
+				t.Fatalf("unexpected FormatEntry error: %v", err)
+			}
+		}
+		if err := formatter.Flush(&buf); err != nil {
+			t.Fatalf("unexpected Flush error: %v", err)
 		}
 
-		if !strings.Contains(out, "main.go") || !strings.Contains(out, ".go") || !strings.Contains(out, "250") {
+		out := buf.String()
+		if !strings.Contains(out, "main.go") || !strings.Contains(out, ".go") || !strings.Contains(out, "go") || !strings.Contains(out, "250") {
 			t.Errorf("expected main.go details in table output, got:\n%s", out)
 		}
-		if !strings.Contains(out, "/root/nested/doc.md") || !strings.Contains(out, "100") {
+		if !strings.Contains(out, "/root/nested/doc.md") || !strings.Contains(out, "100") || !strings.Contains(out, "-") {
 			t.Errorf("expected fallback path and info size in table output, got:\n%s", out)
+		}
+	})
+
+	t.Run("Flush directly initializes header if WriteHeader was not called", func(t *testing.T) {
+		formatter := app.NewDetailedFormatter()
+		var buf bytes.Buffer
+		if err := formatter.Flush(&buf); err != nil {
+			t.Fatalf("unexpected error on direct Flush: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "FILE") {
+			t.Errorf("expected header on direct Flush, got: %q", out)
+		}
+	})
+
+	t.Run("FormatEntry directly initializes header if WriteHeader was not called", func(t *testing.T) {
+		formatter := app.NewDetailedFormatter()
+		var buf bytes.Buffer
+		if err := formatter.FormatEntry(&buf, scanner.Entry{Path: "/path/file.txt", Extension: ".txt", Language: "text"}); err != nil {
+			t.Fatalf("unexpected error on direct FormatEntry: %v", err)
+		}
+		if err := formatter.Flush(&buf); err != nil {
+			t.Fatalf("unexpected error on Flush: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "FILE") || !strings.Contains(out, "file.txt") {
+			t.Errorf("expected header and row on direct FormatEntry, got: %q", out)
 		}
 	})
 }

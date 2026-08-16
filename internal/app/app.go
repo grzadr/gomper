@@ -15,7 +15,7 @@ import (
 // ListOptions specifies formatting and filtering controls for the list command.
 type ListOptions struct {
 	LongFormat     bool
-	Formatter      Formatter
+	Formatter      ListFormatter
 	IgnorePatterns []string
 	IgnoreDirs     []string
 	IgnoreDotfiles bool
@@ -101,7 +101,10 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 		scanOpts = append(scanOpts, scanner.WithComputeMetrics(true))
 	}
 
-	var entries []scanner.Entry
+	if err := formatter.WriteHeader(out); err != nil {
+		return err
+	}
+
 	for entry, err := range walkPathsFunc(ctx, paths, filter, scanOpts...) {
 		if err != nil {
 			logger.ErrorContext(ctx, "scan error encountered", slog.String("path", entry.Path), slog.Any("error", err))
@@ -109,20 +112,20 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 			continue
 		}
 
+		if entry.Content != nil {
+			_ = entry.Content.Close()
+		}
+
 		if entry.IsDir {
 			continue
 		}
 
-		entries = append(entries, entry)
+		if err := formatter.FormatEntry(out, entry); err != nil {
+			return err
+		}
 	}
 
-	formatted, err := formatter.Format(entries)
-	if err != nil {
-		return err
-	}
-
-	_, err = fmt.Fprint(out, formatted)
-	return err
+	return formatter.Flush(out)
 }
 
 // Dump scans paths using scanner.WalkPaths and prepares structure output in the specified format.

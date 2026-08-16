@@ -106,11 +106,11 @@ func TestService_List(t *testing.T) {
 		}
 
 		output := outBuf.String()
-		if !strings.Contains(output, "FILE") || !strings.Contains(output, "EXTENSION") || !strings.Contains(output, "SIZE") || !strings.Contains(output, "LINES") || !strings.Contains(output, "TOKENS") {
-			t.Errorf("expected table headers in detailed format output, got: %q", output)
+		if !strings.Contains(output, "FILE") || !strings.Contains(output, "EXTENSION") || !strings.Contains(output, "LANGUAGE") || !strings.Contains(output, "SIZE") || !strings.Contains(output, "LINES") || !strings.Contains(output, "TOKENS") {
+			t.Errorf("expected table headers with LANGUAGE in detailed format output, got: %q", output)
 		}
-		if !strings.Contains(output, "main.go") || !strings.Contains(output, ".go") {
-			t.Errorf("expected main.go row in detailed format output, got: %q", output)
+		if !strings.Contains(output, "main.go") || !strings.Contains(output, ".go") || !strings.Contains(output, "go") {
+			t.Errorf("expected main.go row with language in detailed format output, got: %q", output)
 		}
 	})
 
