@@ -160,6 +160,59 @@ func TestAdversarial_IteratorEarlyTerminationLeak(t *testing.T) {
 			t.Errorf("leak detected: %d unclosed resources after pipeline early break", remaining)
 		}
 	})
+
+	t.Run("BatchEntries specific mid-batch leak check", func(t *testing.T) {
+		var openCount atomic.Int64
+		const totalItems = 20
+		const batchSize = 10
+
+		closers := make([]*leakTrackingReadCloser, totalItems)
+		for i := range totalItems {
+			openCount.Add(1)
+			closers[i] = newLeakTrackingReadCloser([]byte("test"), func() {
+				openCount.Add(-1)
+			})
+		}
+
+		seq := func(yield func(scanner.Entry, error) bool) {
+			for i := range totalItems {
+				entry := scanner.Entry{
+					Path:    fmt.Sprintf("item_%d.txt", i),
+					Content: closers[i],
+				}
+				if !yield(entry, nil) {
+					for j := i + 1; j < totalItems; j++ {
+						_ = closers[j].Close()
+					}
+					return
+				}
+			}
+		}
+
+		batched := scanner.BatchEntries(seq, batchSize)
+
+		// Consume and break in the middle of the second batch (item 15)
+		var itemsConsumed int
+		for batch, err := range batched {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			for _, item := range batch {
+				itemsConsumed++
+				if itemsConsumed == 15 {
+					// Manually close the item we just consumed to simulate consumer behavior
+					if item.Content != nil {
+						_ = item.Content.Close()
+					}
+					return
+				}
+			}
+		}
+
+		if remaining := openCount.Load(); remaining != 0 {
+			t.Errorf("leak detected: %d unclosed resources after mid-batch break", remaining)
+		}
+	})
 }
 
 // TestAdversarial_GenericCombinatorsBoundary tests empty, error, and large sequences on generic combinators.

@@ -105,7 +105,8 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 		return err
 	}
 
-	nonDirEntries := scanner.FilterEntries(walkPathsFunc(ctx, paths, filter, scanOpts...), func(e scanner.Entry) bool {
+	scannerSvc := new(scanner.Scanner)
+	nonDirEntries := scannerSvc.FilterEntries(walkPathsFunc(ctx, paths, filter, scanOpts...), func(e scanner.Entry) bool {
 		return !e.IsDir
 	})
 
