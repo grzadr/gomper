@@ -16,9 +16,9 @@ func TestResolveVersion(t *testing.T) {
 			name:          "LDFlags set explicitly",
 			ldflagVersion: "v1.2.3",
 			reader: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{
+				return new(debug.BuildInfo{
 					Main: debug.Module{Version: "v9.9.9"},
-				}, true
+				}), true
 			},
 			expected: "v1.2.3",
 		},
@@ -32,9 +32,9 @@ func TestResolveVersion(t *testing.T) {
 			name:          "Module version from ReadBuildInfo when LDFlags empty",
 			ldflagVersion: "",
 			reader: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{
+				return new(debug.BuildInfo{
 					Main: debug.Module{Version: "v1.5.0"},
-				}, true
+				}), true
 			},
 			expected: "v1.5.0",
 		},
@@ -42,9 +42,9 @@ func TestResolveVersion(t *testing.T) {
 			name:          "Module version with whitespace",
 			ldflagVersion: "",
 			reader: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{
+				return new(debug.BuildInfo{
 					Main: debug.Module{Version: "  v1.5.0-rc1  "},
-				}, true
+				}), true
 			},
 			expected: "v1.5.0-rc1",
 		},
@@ -52,13 +52,13 @@ func TestResolveVersion(t *testing.T) {
 			name:          "VCS clean build when Module version is (devel)",
 			ldflagVersion: "",
 			reader: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{
+				return new(debug.BuildInfo{
 					Main: debug.Module{Version: "(devel)"},
 					Settings: []debug.BuildSetting{
 						{Key: "vcs.revision", Value: "abcdef123456"},
 						{Key: "vcs.modified", Value: "false"},
 					},
-				}, true
+				}), true
 			},
 			expected: "abcdef123456",
 		},
@@ -66,13 +66,13 @@ func TestResolveVersion(t *testing.T) {
 			name:          "VCS dirty build when Module version is (devel)",
 			ldflagVersion: "",
 			reader: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{
+				return new(debug.BuildInfo{
 					Main: debug.Module{Version: "(devel)"},
 					Settings: []debug.BuildSetting{
 						{Key: "vcs.revision", Value: "abcdef123456"},
 						{Key: "vcs.modified", Value: "true"},
 					},
-				}, true
+				}), true
 			},
 			expected: "abcdef123456-dirty",
 		},
@@ -80,12 +80,12 @@ func TestResolveVersion(t *testing.T) {
 			name:          "VCS clean build when Module version is empty",
 			ldflagVersion: "",
 			reader: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{
+				return new(debug.BuildInfo{
 					Main: debug.Module{Version: ""},
 					Settings: []debug.BuildSetting{
 						{Key: "vcs.revision", Value: "abcdef123456"},
 					},
-				}, true
+				}), true
 			},
 			expected: "abcdef123456",
 		},
@@ -93,12 +93,12 @@ func TestResolveVersion(t *testing.T) {
 			name:          "VCS modified is true but no revision falls back to dev",
 			ldflagVersion: "",
 			reader: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{
+				return new(debug.BuildInfo{
 					Main: debug.Module{Version: "(devel)"},
 					Settings: []debug.BuildSetting{
 						{Key: "vcs.modified", Value: "true"},
 					},
-				}, true
+				}), true
 			},
 			expected: "dev",
 		},
@@ -128,10 +128,10 @@ func TestResolveVersion(t *testing.T) {
 			name:          "Empty BuildInfo settings and devel version falls back to dev",
 			ldflagVersion: "",
 			reader: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{
+				return new(debug.BuildInfo{
 					Main:     debug.Module{Version: "(devel)"},
 					Settings: []debug.BuildSetting{},
-				}, true
+				}), true
 			},
 			expected: "dev",
 		},
@@ -165,9 +165,9 @@ func TestGetVersion(t *testing.T) {
 	t.Run("getVersion uses custom reader when Version is empty", func(t *testing.T) {
 		Version = ""
 		readBuildInfo = func() (*debug.BuildInfo, bool) {
-			return &debug.BuildInfo{
+			return new(debug.BuildInfo{
 				Main: debug.Module{Version: "v2.1.0"},
-			}, true
+			}), true
 		}
 		if got := getVersion(); got != "v2.1.0" {
 			t.Errorf("getVersion() = %q, expected %q", got, "v2.1.0")
@@ -191,14 +191,14 @@ func TestGetBuildInfo(t *testing.T) {
 		{
 			name: "Populated VCS settings and module version",
 			reader: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{
+				return new(debug.BuildInfo{
 					Main: debug.Module{Version: "v1.0.0"},
 					Settings: []debug.BuildSetting{
 						{Key: "vcs.revision", Value: "1234567890ab"},
 						{Key: "vcs.time", Value: "2026-08-23T20:00:00Z"},
 						{Key: "vcs.modified", Value: "true"},
 					},
-				}, true
+				}), true
 			},
 			wantVersion: "v1.0.0",
 			wantCommit:  "1234567890ab-dirty",
@@ -207,14 +207,14 @@ func TestGetBuildInfo(t *testing.T) {
 		{
 			name: "Clean VCS build with (devel) module version",
 			reader: func() (*debug.BuildInfo, bool) {
-				return &debug.BuildInfo{
+				return new(debug.BuildInfo{
 					Main: debug.Module{Version: "(devel)"},
 					Settings: []debug.BuildSetting{
 						{Key: "vcs.revision", Value: "abcdef123456"},
 						{Key: "vcs.time", Value: "2026-08-23T19:00:00Z"},
 						{Key: "vcs.modified", Value: "false"},
 					},
-				}, true
+				}), true
 			},
 			wantVersion: "",
 			wantCommit:  "abcdef123456",

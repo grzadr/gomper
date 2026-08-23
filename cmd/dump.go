@@ -13,7 +13,7 @@ func NewDumpCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 	var localNameFilter []string
 	var localProfiles []string
 
-	cmd := &cobra.Command{
+	cmd := new(cobra.Command{
 		Use:   "dump [path...]",
 		Short: "Dump directory structure into a single file",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -46,7 +46,7 @@ func NewDumpCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 			}
 			return service.Dump(cmd.Context(), cmd.OutOrStdout(), targetPaths, opts)
 		},
-	}
+	})
 
 	cmd.Flags().VarP(&cfg.Format, "format", "f", "output format ('markdown' or 'xml')")
 	cmd.Flags().StringVarP(&cfg.Output, "output", "o", "", "output file path (defaults to stdout)")

@@ -25,7 +25,7 @@ func NewFormatsCommand() *cobra.Command {
 	var jsonOutput bool
 	var query string
 
-	cmd := &cobra.Command{
+	cmd := new(cobra.Command{
 		Use:   "formats",
 		Short: "List supported file formats and extensions",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -76,7 +76,7 @@ func NewFormatsCommand() *cobra.Command {
 			}
 			return nil
 		},
-	}
+	})
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output format list as JSON")
 	cmd.Flags().StringVar(&query, "query", "", "JSON pointer query (RFC 6901) to filter JSON output")
