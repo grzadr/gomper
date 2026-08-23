@@ -1,0 +1,34 @@
+# Azure CLI / Azure Developer CLI
+.azure/
+*.azureauth
+azure.conf
+
+# Azure Functions local settings (may contain secrets)
+local.settings.json
+
+# Bicep local configuration
+.bicep/
+
+# Lock files (auto-generated, can be regenerated)
+*.lock.json
+
+# ARM template compiled output (if treating .json as Bicep build artifacts)
+# Uncomment if .json files are generated from .bicep and should not be tracked:
+# *.json
+
+# Local-only Bicep parameter overrides (may contain sensitive data)
+*.local.bicepparam
+*.secrets.bicepparam
+
+# Azure DevOps pipeline cache
+.pipeline/
+
+# ARM What-If output files
+whatif-*.json
+whatif-result*.json
+
+# Deployment output files
+deployment-output*.json
+
+# Azure Static Web Apps config (local)
+.swa/

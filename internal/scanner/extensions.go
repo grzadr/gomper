@@ -63,6 +63,10 @@ var SupportedExtensions = map[string]string{
 	".tftpl":  "terraform",
 	".hcl":    "hcl",
 
+	// Azure / Bicep
+	".bicep":      "bicep",
+	".bicepparam": "bicep",
+
 	// Systems / Languages
 	".c":     "c",
 	".h":     "cpp",
