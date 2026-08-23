@@ -196,15 +196,33 @@ var (
 	countLinesAndTokensFunc = CountLinesAndTokens
 )
 
-// WalkPaths returns an iter.Seq2[Entry, error] iterator (Go range-over-function)
-// that traverses all files and directories specified by paths, filtering out entries
-// that match any active ignore patterns in filter.
-func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...ScanOption) iter.Seq2[Entry, error] {
+// Scanner coordinates filesystem traversal and filtering.
+type Scanner struct {
+	filter  *Filter
+	options ScanOptions
+}
+
+// NewScanner creates a configured Scanner instance.
+func NewScanner(filter *Filter, opts ...ScanOption) *Scanner {
 	var scanOpts ScanOptions
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&scanOpts)
 		}
+	}
+	return &Scanner{
+		filter:  filter,
+		options: scanOpts,
+	}
+}
+
+// Walk traverses the given paths and yields Entry items.
+func (s *Scanner) Walk(ctx context.Context, paths []string) iter.Seq2[Entry, error] {
+	var filter *Filter
+	var scanOpts ScanOptions
+	if s != nil {
+		filter = s.filter
+		scanOpts = s.options
 	}
 
 	return func(yield func(Entry, error) bool) {
@@ -410,4 +428,126 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 		}
 	}
 }
+
+// WalkPaths returns an iter.Seq2[Entry, error] iterator (Go range-over-function)
+// that traverses all files and directories specified by paths, filtering out entries
+// that match any active ignore patterns in filter.
+func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...ScanOption) iter.Seq2[Entry, error] {
+	return NewScanner(filter, opts...).Walk(ctx, paths)
+}
+
+// ProcessEntries executes a strongly-typed generic transformation on an Entry sequence,
+// ensuring underlying resource closures (e.g. entry.Content) are closed on error or short-circuit.
+func ProcessEntries[T any](ctx context.Context, seq iter.Seq2[Entry, error], transform func(Entry) (T, error)) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		for entry, err := range seq {
+			if ctx.Err() != nil {
+				if entry.Content != nil {
+					_ = entry.Content.Close()
+				}
+				var zero T
+				yield(zero, ctx.Err())
+				return
+			}
+			if err != nil {
+				if entry.Content != nil {
+					_ = entry.Content.Close()
+				}
+				var zero T
+				if !yield(zero, err) {
+					return
+				}
+				continue
+			}
+			res, tErr := transform(entry)
+			if entry.Content != nil {
+				_ = entry.Content.Close()
+			}
+			if tErr != nil {
+				var zero T
+				if !yield(zero, tErr) {
+					return
+				}
+				continue
+			}
+			if !yield(res, nil) {
+				return
+			}
+		}
+	}
+}
+
+// FilterEntries filters an iter.Seq2[T, error] with a predicate function.
+// If an entry is dropped, any io.Closer or Entry.Content is safely closed.
+func FilterEntries[T any](seq iter.Seq2[T, error], predicate func(T) bool) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		for item, err := range seq {
+			if err != nil {
+				if !yield(item, err) {
+					return
+				}
+				continue
+			}
+			if predicate(item) {
+				if !yield(item, nil) {
+					return
+				}
+			} else {
+				if closer, ok := any(item).(io.Closer); ok && closer != nil {
+					_ = closer.Close()
+				} else if e, ok := any(item).(Entry); ok && e.Content != nil {
+					_ = e.Content.Close()
+				}
+			}
+		}
+	}
+}
+
+// CollectEntries collects all items from an iterator into a slice.
+func CollectEntries[T any](seq iter.Seq2[T, error]) ([]T, error) {
+	var items []T
+	for item, err := range seq {
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+// BatchEntries batches items from an iterator into slices of at most batchSize.
+func BatchEntries[T any](seq iter.Seq2[T, error], batchSize int) iter.Seq2[[]T, error] {
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	return func(yield func([]T, error) bool) {
+		var batch []T
+		for item, err := range seq {
+			if err != nil {
+				if len(batch) > 0 {
+					if !yield(batch, nil) {
+						return
+					}
+					batch = nil
+				}
+				var zero []T
+				if !yield(zero, err) {
+					return
+				}
+				continue
+			}
+			batch = append(batch, item)
+			if len(batch) >= batchSize {
+				if !yield(batch, nil) {
+					return
+				}
+				batch = nil
+			}
+		}
+		if len(batch) > 0 {
+			_ = yield(batch, nil)
+		}
+	}
+}
+
 

@@ -2,6 +2,8 @@ package scanner_test
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -744,3 +746,617 @@ func TestWalkPaths_Metrics(t *testing.T) {
 		}
 	})
 }
+
+type trackingCloser struct {
+	io.Reader
+	closed bool
+}
+
+func (c *trackingCloser) Close() error {
+	c.closed = true
+	return nil
+}
+
+func TestScanner_NewScannerAndWalk(t *testing.T) {
+	tempDir := t.TempDir()
+	file1 := filepath.Join(tempDir, "a.txt")
+	_ = os.WriteFile(file1, []byte("hello"), 0644)
+
+	t.Run("NewScanner with nil filter and Walk", func(t *testing.T) {
+		s := scanner.NewScanner(nil)
+		ctx := context.Background()
+		var count int
+		for entry, err := range s.Walk(ctx, []string{tempDir}) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected 1 file, got %d", count)
+		}
+	})
+
+	t.Run("nil *Scanner receiver Walk behaves safely", func(t *testing.T) {
+		var s *scanner.Scanner
+		ctx := context.Background()
+		var count int
+		for entry, err := range s.Walk(ctx, []string{tempDir}) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected 1 file, got %d", count)
+		}
+	})
+}
+
+func TestGenericPipeline_ProcessEntries(t *testing.T) {
+	t.Run("Transforms Entry to strongly-typed metadata", func(t *testing.T) {
+		type FileMeta struct {
+			Path string
+			Size int64
+		}
+
+		seq := func(yield func(scanner.Entry, error) bool) {
+			if !yield(scanner.Entry{Path: "file1.txt", Size: 100}, nil) {
+				return
+			}
+			_ = yield(scanner.Entry{Path: "file2.txt", Size: 200}, nil)
+		}
+
+		ctx := context.Background()
+		processed := scanner.ProcessEntries(ctx, seq, func(e scanner.Entry) (FileMeta, error) {
+			return FileMeta{Path: e.Path, Size: e.Size}, nil
+		})
+
+		items, err := scanner.CollectEntries(processed)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(items) != 2 {
+			t.Fatalf("expected 2 items, got %d", len(items))
+		}
+		if items[0].Path != "file1.txt" || items[0].Size != 100 {
+			t.Errorf("unexpected item 0: %+v", items[0])
+		}
+		if items[1].Path != "file2.txt" || items[1].Size != 200 {
+			t.Errorf("unexpected item 1: %+v", items[1])
+		}
+	})
+
+	t.Run("Closes Entry.Content on successful transform", func(t *testing.T) {
+		closer := &trackingCloser{}
+		seq := func(yield func(scanner.Entry, error) bool) {
+			_ = yield(scanner.Entry{Path: "file.txt", Content: closer}, nil)
+		}
+
+		ctx := context.Background()
+		processed := scanner.ProcessEntries(ctx, seq, func(e scanner.Entry) (string, error) {
+			return e.Path, nil
+		})
+
+		for _, err := range processed {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		}
+
+		if !closer.closed {
+			t.Errorf("expected closer to be closed after transform")
+		}
+	})
+
+	t.Run("Handles transform error and closes Content", func(t *testing.T) {
+		closer := &trackingCloser{}
+		seq := func(yield func(scanner.Entry, error) bool) {
+			if !yield(scanner.Entry{Path: "bad.txt", Content: closer}, nil) {
+				return
+			}
+			_ = yield(scanner.Entry{Path: "good.txt"}, nil)
+		}
+
+		transformErr := errors.New("transform error")
+		ctx := context.Background()
+		processed := scanner.ProcessEntries(ctx, seq, func(e scanner.Entry) (string, error) {
+			if e.Path == "bad.txt" {
+				return "", transformErr
+			}
+			return e.Path, nil
+		})
+
+		var errs []error
+		var results []string
+		for res, err := range processed {
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				results = append(results, res)
+			}
+		}
+
+		if !closer.closed {
+			t.Errorf("expected closer to be closed on transform error")
+		}
+		if len(errs) != 1 || !errors.Is(errs[0], transformErr) {
+			t.Errorf("expected transformErr, got %v", errs)
+		}
+		if len(results) != 1 || results[0] != "good.txt" {
+			t.Errorf("expected good.txt result, got %v", results)
+		}
+	})
+
+	t.Run("Handles context cancellation and closes Content", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		closer := &trackingCloser{}
+		seq := func(yield func(scanner.Entry, error) bool) {
+			_ = yield(scanner.Entry{Path: "file.txt", Content: closer}, nil)
+		}
+
+		processed := scanner.ProcessEntries(ctx, seq, func(e scanner.Entry) (string, error) {
+			return e.Path, nil
+		})
+
+		var errs []error
+		for _, err := range processed {
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+
+		if !closer.closed {
+			t.Errorf("expected closer to be closed on canceled context")
+		}
+		if len(errs) != 1 || !errors.Is(errs[0], context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", errs)
+		}
+	})
+
+	t.Run("Propagates sequence error and closes Content", func(t *testing.T) {
+		seqErr := errors.New("upstream seq error")
+		closer := &trackingCloser{}
+		seq := func(yield func(scanner.Entry, error) bool) {
+			_ = yield(scanner.Entry{Path: "err.txt", Content: closer}, seqErr)
+		}
+
+		ctx := context.Background()
+		processed := scanner.ProcessEntries(ctx, seq, func(e scanner.Entry) (string, error) {
+			return e.Path, nil
+		})
+
+		var errs []error
+		for _, err := range processed {
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+
+		if !closer.closed {
+			t.Errorf("expected closer to be closed on upstream error")
+		}
+		if len(errs) != 1 || !errors.Is(errs[0], seqErr) {
+			t.Errorf("expected upstream error, got %v", errs)
+		}
+	})
+
+	t.Run("Short-circuits on false yield", func(t *testing.T) {
+		seq := func(yield func(scanner.Entry, error) bool) {
+			if !yield(scanner.Entry{Path: "1.txt"}, nil) {
+				return
+			}
+			_ = yield(scanner.Entry{Path: "2.txt"}, nil)
+		}
+
+		ctx := context.Background()
+		processed := scanner.ProcessEntries(ctx, seq, func(e scanner.Entry) (string, error) {
+			return e.Path, nil
+		})
+
+		var count int
+		for _, err := range processed {
+			if err == nil {
+				count++
+				break
+			}
+		}
+
+		if count != 1 {
+			t.Errorf("expected count 1 on break, got %d", count)
+		}
+	})
+
+	t.Run("Early break during upstream error yield", func(t *testing.T) {
+		seqErr := errors.New("err")
+		seq := func(yield func(scanner.Entry, error) bool) {
+			if !yield(scanner.Entry{Path: "1.txt"}, seqErr) {
+				return
+			}
+			_ = yield(scanner.Entry{Path: "2.txt"}, seqErr)
+		}
+
+		ctx := context.Background()
+		processed := scanner.ProcessEntries(ctx, seq, func(e scanner.Entry) (string, error) {
+			return e.Path, nil
+		})
+
+		var count int
+		for _, err := range processed {
+			if err != nil {
+				count++
+				break
+			}
+		}
+
+		if count != 1 {
+			t.Errorf("expected count 1 on error break, got %d", count)
+		}
+	})
+
+	t.Run("Early break during transform error yield", func(t *testing.T) {
+		seq := func(yield func(scanner.Entry, error) bool) {
+			if !yield(scanner.Entry{Path: "1.txt"}, nil) {
+				return
+			}
+			_ = yield(scanner.Entry{Path: "2.txt"}, nil)
+		}
+
+		ctx := context.Background()
+		processed := scanner.ProcessEntries(ctx, seq, func(e scanner.Entry) (string, error) {
+			return "", errors.New("transform fail")
+		})
+
+		var count int
+		for _, err := range processed {
+			if err != nil {
+				count++
+				break
+			}
+		}
+
+		if count != 1 {
+			t.Errorf("expected count 1 on transform error break, got %d", count)
+		}
+	})
+}
+
+func TestGenericPipeline_FilterEntries(t *testing.T) {
+	t.Run("Filters elements with predicate and closes dropped closer", func(t *testing.T) {
+		closer1 := &trackingCloser{}
+		closer2 := &trackingCloser{}
+
+		seq := func(yield func(*trackingCloser, error) bool) {
+			if !yield(closer1, nil) {
+				return
+			}
+			_ = yield(closer2, nil)
+		}
+
+		// Keep only closer2
+		filtered := scanner.FilterEntries(seq, func(c *trackingCloser) bool {
+			return c == closer2
+		})
+
+		var kept []*trackingCloser
+		for item, err := range filtered {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			kept = append(kept, item)
+		}
+
+		if len(kept) != 1 || kept[0] != closer2 {
+			t.Fatalf("expected only closer2 kept, got %v", kept)
+		}
+		if !closer1.closed {
+			t.Errorf("expected dropped closer1 to be closed")
+		}
+		if closer2.closed {
+			t.Errorf("expected kept closer2 NOT to be closed")
+		}
+	})
+
+	t.Run("Filters Entry items and closes dropped Entry.Content", func(t *testing.T) {
+		c1 := &trackingCloser{}
+		c2 := &trackingCloser{}
+
+		seq := func(yield func(scanner.Entry, error) bool) {
+			if !yield(scanner.Entry{Path: "drop.txt", Content: c1}, nil) {
+				return
+			}
+			_ = yield(scanner.Entry{Path: "keep.txt", Content: c2}, nil)
+		}
+
+		filtered := scanner.FilterEntries(seq, func(e scanner.Entry) bool {
+			return e.Path == "keep.txt"
+		})
+
+		var kept []scanner.Entry
+		for item, err := range filtered {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			kept = append(kept, item)
+		}
+
+		if len(kept) != 1 || kept[0].Path != "keep.txt" {
+			t.Fatalf("expected keep.txt, got %v", kept)
+		}
+		if !c1.closed {
+			t.Errorf("expected c1 to be closed on drop")
+		}
+		if c2.closed {
+			t.Errorf("expected c2 to remain open")
+		}
+	})
+
+	t.Run("Passes through errors and handles early break", func(t *testing.T) {
+		seqErr := errors.New("filter seq error")
+		seq := func(yield func(int, error) bool) {
+			if !yield(0, seqErr) {
+				return
+			}
+			if !yield(1, nil) {
+				return
+			}
+			_ = yield(2, nil)
+		}
+
+		filtered := scanner.FilterEntries(seq, func(n int) bool { return n > 0 })
+
+		var errs []error
+		for _, err := range filtered {
+			if err != nil {
+				errs = append(errs, err)
+				break
+			}
+		}
+
+		if len(errs) != 1 || !errors.Is(errs[0], seqErr) {
+			t.Errorf("expected seqErr, got %v", errs)
+		}
+	})
+
+	t.Run("Passes through errors when not breaking", func(t *testing.T) {
+		seqErr := errors.New("filter seq error")
+		seq := func(yield func(int, error) bool) {
+			if !yield(0, seqErr) {
+				return
+			}
+			_ = yield(1, nil)
+		}
+
+		filtered := scanner.FilterEntries(seq, func(n int) bool { return n > 0 })
+
+		var errs []error
+		var items []int
+		for item, err := range filtered {
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				items = append(items, item)
+			}
+		}
+
+		if len(errs) != 1 || len(items) != 1 {
+			t.Errorf("expected 1 err and 1 item, got errs=%v items=%v", errs, items)
+		}
+	})
+
+	t.Run("Short-circuits on break for matching item", func(t *testing.T) {
+		seq := func(yield func(int, error) bool) {
+			if !yield(1, nil) {
+				return
+			}
+			_ = yield(2, nil)
+		}
+
+		filtered := scanner.FilterEntries(seq, func(n int) bool { return true })
+
+		var count int
+		for _, err := range filtered {
+			if err == nil {
+				count++
+				break
+			}
+		}
+
+		if count != 1 {
+			t.Errorf("expected count 1 on break, got %d", count)
+		}
+	})
+}
+
+func TestGenericPipeline_CollectEntries(t *testing.T) {
+	t.Run("Collects all items successfully", func(t *testing.T) {
+		seq := func(yield func(string, error) bool) {
+			if !yield("alpha", nil) {
+				return
+			}
+			_ = yield("beta", nil)
+		}
+
+		items, err := scanner.CollectEntries(seq)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(items) != 2 || items[0] != "alpha" || items[1] != "beta" {
+			t.Errorf("unexpected items: %v", items)
+		}
+	})
+
+	t.Run("Returns error on sequence error", func(t *testing.T) {
+		expectedErr := errors.New("collect error")
+		seq := func(yield func(string, error) bool) {
+			if !yield("alpha", nil) {
+				return
+			}
+			_ = yield("", expectedErr)
+		}
+
+		items, err := scanner.CollectEntries(seq)
+		if !errors.Is(err, expectedErr) {
+			t.Fatalf("expected %v, got %v", expectedErr, err)
+		}
+		if items != nil {
+			t.Errorf("expected nil items on error, got %v", items)
+		}
+	})
+}
+
+func TestGenericPipeline_BatchEntries(t *testing.T) {
+	t.Run("Batches items with exact multiple", func(t *testing.T) {
+		seq := func(yield func(int, error) bool) {
+			for i := range 4 {
+				if !yield(i+1, nil) {
+					return
+				}
+			}
+		}
+
+		batches, err := scanner.CollectEntries(scanner.BatchEntries(seq, 2))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(batches) != 2 {
+			t.Fatalf("expected 2 batches, got %d", len(batches))
+		}
+		if len(batches[0]) != 2 || batches[0][0] != 1 || batches[0][1] != 2 {
+			t.Errorf("batch 0 mismatch: %v", batches[0])
+		}
+		if len(batches[1]) != 2 || batches[1][0] != 3 || batches[1][1] != 4 {
+			t.Errorf("batch 1 mismatch: %v", batches[1])
+		}
+	})
+
+	t.Run("Batches items with remainder and batchSize <= 0 defaults to 1", func(t *testing.T) {
+		seq := func(yield func(int, error) bool) {
+			if !yield(10, nil) {
+				return
+			}
+			if !yield(20, nil) {
+				return
+			}
+			_ = yield(30, nil)
+		}
+
+		// 3 items with batch size 2 yields batch [10, 20] and trailing batch [30]
+		batches, err := scanner.CollectEntries(scanner.BatchEntries(seq, 2))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(batches) != 2 || len(batches[0]) != 2 || len(batches[1]) != 1 {
+			t.Fatalf("expected 2 batches ([2, 1]), got %d batches: %v", len(batches), batches)
+		}
+
+		// batchSize <= 0 defaults to 1
+		batches1, err := scanner.CollectEntries(scanner.BatchEntries(seq, 0))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(batches1) != 3 {
+			t.Fatalf("expected 3 batches of size 1, got %d", len(batches1))
+		}
+	})
+
+	t.Run("Yields pending batch and propagates error", func(t *testing.T) {
+		expectedErr := errors.New("batch seq error")
+		seq := func(yield func(int, error) bool) {
+			if !yield(1, nil) {
+				return
+			}
+			_ = yield(2, expectedErr)
+		}
+
+		batched := scanner.BatchEntries(seq, 5)
+		var collectedBatches [][]int
+		var collectedErrs []error
+
+		for batch, err := range batched {
+			if err != nil {
+				collectedErrs = append(collectedErrs, err)
+			} else {
+				collectedBatches = append(collectedBatches, batch)
+			}
+		}
+
+		if len(collectedBatches) != 1 || len(collectedBatches[0]) != 1 || collectedBatches[0][0] != 1 {
+			t.Errorf("expected pending batch [1], got %v", collectedBatches)
+		}
+		if len(collectedErrs) != 1 || !errors.Is(collectedErrs[0], expectedErr) {
+			t.Errorf("expected error %v, got %v", expectedErr, collectedErrs)
+		}
+	})
+
+	t.Run("Early break on batch yield", func(t *testing.T) {
+		seq := func(yield func(int, error) bool) {
+			for i := range 10 {
+				if !yield(i, nil) {
+					return
+				}
+			}
+		}
+
+		batched := scanner.BatchEntries(seq, 2)
+		var count int
+		for _, err := range batched {
+			if err == nil {
+				count++
+				break
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected 1 batch on break, got %d", count)
+		}
+	})
+
+	t.Run("Early break on pending batch before error", func(t *testing.T) {
+		seq := func(yield func(int, error) bool) {
+			if !yield(1, nil) {
+				return
+			}
+			_ = yield(2, errors.New("error"))
+		}
+
+		batched := scanner.BatchEntries(seq, 5)
+		var count int
+		for _, err := range batched {
+			if err == nil {
+				count++
+				break // breaks when receiving pending batch
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected count 1 on break, got %d", count)
+		}
+	})
+
+	t.Run("Early break on error yield in batch", func(t *testing.T) {
+		seq := func(yield func(int, error) bool) {
+			if !yield(0, errors.New("error")) {
+				return
+			}
+			_ = yield(0, errors.New("error 2"))
+		}
+
+		batched := scanner.BatchEntries(seq, 5)
+		var count int
+		for _, err := range batched {
+			if err != nil {
+				count++
+				break
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected count 1 on error break, got %d", count)
+		}
+	})
+}
+
