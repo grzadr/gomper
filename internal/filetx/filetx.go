@@ -28,10 +28,10 @@ type Tx[T any] struct {
 
 // NewTx creates a new Tx transaction instance.
 func NewTx[T any](targetPath string, writeFunc func(ctx context.Context, w io.Writer) (T, error)) *Tx[T] {
-	return &Tx[T]{
+	return new(Tx[T]{
 		targetPath: targetPath,
 		writeFunc:  writeFunc,
-	}
+	})
 }
 
 // Execute performs the atomic file write operation and returns the result T.
