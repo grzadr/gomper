@@ -178,5 +178,111 @@ func TestWriteAtomically(t *testing.T) {
 			t.Errorf("expected 'permission test data', got %q", string(content))
 		}
 	})
+
+	t.Run("Succeeds when writeFunc is nil", func(t *testing.T) {
+		tempDir := t.TempDir()
+		targetPath := filepath.Join(tempDir, "empty.txt")
+		err := filetx.WriteAtomically(context.Background(), targetPath, nil)
+		if err != nil {
+			t.Fatalf("unexpected error with nil writeFunc: %v", err)
+		}
+		if _, err := os.Stat(targetPath); err != nil {
+			t.Fatalf("expected target file to exist, got: %v", err)
+		}
+	})
 }
+
+func TestWriteAtomicallyWithResult(t *testing.T) {
+	type WriteStats struct {
+		BytesWritten int
+		Summary      string
+	}
+
+	t.Run("Returns typed result and writes file atomically", func(t *testing.T) {
+		tempDir := t.TempDir()
+		targetPath := filepath.Join(tempDir, "stats.txt")
+
+		stats, err := filetx.WriteAtomicallyWithResult(context.Background(), targetPath, func(ctx context.Context, w io.Writer) (WriteStats, error) {
+			n, err := w.Write([]byte("statistics data"))
+			return WriteStats{BytesWritten: n, Summary: "ok"}, err
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if stats.BytesWritten != 15 || stats.Summary != "ok" {
+			t.Errorf("unexpected stats: %+v", stats)
+		}
+
+		content, err := os.ReadFile(targetPath)
+		if err != nil {
+			t.Fatalf("failed to read target file: %v", err)
+		}
+		if string(content) != "statistics data" {
+			t.Errorf("expected 'statistics data', got %q", string(content))
+		}
+	})
+
+	t.Run("Propagates error from writeFunc", func(t *testing.T) {
+		tempDir := t.TempDir()
+		targetPath := filepath.Join(tempDir, "fail.txt")
+
+		expectedErr := errors.New("write failed")
+		_, err := filetx.WriteAtomicallyWithResult(context.Background(), targetPath, func(ctx context.Context, w io.Writer) (int, error) {
+			return 0, expectedErr
+		})
+		if !errors.Is(err, expectedErr) {
+			t.Errorf("expected %v, got %v", expectedErr, err)
+		}
+	})
+
+	t.Run("Handles nil writeFunc", func(t *testing.T) {
+		tempDir := t.TempDir()
+		targetPath := filepath.Join(tempDir, "nil_write.txt")
+
+		res, err := filetx.WriteAtomicallyWithResult[string](context.Background(), targetPath, nil)
+		if err != nil {
+			t.Fatalf("unexpected error with nil writeFunc: %v", err)
+		}
+		if res != "" {
+			t.Errorf("expected empty string zero value, got %q", res)
+		}
+	})
+}
+
+func TestTx(t *testing.T) {
+	t.Run("Execute successful transaction", func(t *testing.T) {
+		tempDir := t.TempDir()
+		targetPath := filepath.Join(tempDir, "tx.txt")
+
+		tx := filetx.NewTx(targetPath, func(ctx context.Context, w io.Writer) (int64, error) {
+			n, err := w.Write([]byte("transactional write"))
+			return int64(n), err
+		})
+
+		n, err := tx.Execute(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if n != 19 {
+			t.Errorf("expected 19 bytes written, got %d", n)
+		}
+
+		content, err := os.ReadFile(targetPath)
+		if err != nil {
+			t.Fatalf("failed to read file: %v", err)
+		}
+		if string(content) != "transactional write" {
+			t.Errorf("expected 'transactional write', got %q", string(content))
+		}
+	})
+
+	t.Run("nil *Tx Execute returns error", func(t *testing.T) {
+		var tx *filetx.Tx[string]
+		_, err := tx.Execute(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "nil transaction") {
+			t.Errorf("expected nil transaction error, got: %v", err)
+		}
+	})
+}
+
 
