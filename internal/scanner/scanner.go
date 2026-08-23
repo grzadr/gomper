@@ -97,12 +97,12 @@ func NewFilter(opts FilterOptions) (*Filter, error) {
 	if len(regexes) == 0 && len(dirRegexes) == 0 && len(nameRegexes) == 0 && !opts.IgnoreDotfiles {
 		return nil, nil
 	}
-	return &Filter{
+	return new(Filter{
 		nameRegexes:    nameRegexes,
 		regexes:        regexes,
 		dirRegexes:     dirRegexes,
 		ignoreDotfiles: opts.IgnoreDotfiles,
-	}, nil
+	}), nil
 }
 
 // ShouldIgnore checks if an entry should be ignored following the strict evaluation order:
@@ -210,10 +210,10 @@ func NewScanner(filter *Filter, opts ...ScanOption) *Scanner {
 			opt(&scanOpts)
 		}
 	}
-	return &Scanner{
+	return new(Scanner{
 		filter:  filter,
 		options: scanOpts,
-	}
+	})
 }
 
 // Walk traverses the given paths and yields Entry items.

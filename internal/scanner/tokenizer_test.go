@@ -76,7 +76,7 @@ func TestWhitespaceTokenizer_CountTokens(t *testing.T) {
 
 	t.Run("Reader error propagation", func(t *testing.T) {
 		expectedErr := errors.New("read failure")
-		_, err := tokenizer.CountTokens(&errorReader{err: expectedErr})
+		_, err := tokenizer.CountTokens(new(errorReader{err: expectedErr}))
 		if !errors.Is(err, expectedErr) {
 			t.Errorf("expected error %v, got %v", expectedErr, err)
 		}

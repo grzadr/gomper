@@ -15,7 +15,7 @@ type WhitespaceTokenizer struct{}
 
 // NewWhitespaceTokenizer creates a new WhitespaceTokenizer instance.
 func NewWhitespaceTokenizer() *WhitespaceTokenizer {
-	return &WhitespaceTokenizer{}
+	return new(WhitespaceTokenizer{})
 }
 
 // CountTokens counts whitespace-delimited tokens in the provided reader.

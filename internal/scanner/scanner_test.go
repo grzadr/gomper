@@ -832,7 +832,7 @@ func TestGenericPipeline_ProcessEntries(t *testing.T) {
 	})
 
 	t.Run("Closes Entry.Content on successful transform", func(t *testing.T) {
-		closer := &trackingCloser{}
+		closer := new(trackingCloser{})
 		seq := func(yield func(scanner.Entry, error) bool) {
 			_ = yield(scanner.Entry{Path: "file.txt", Content: closer}, nil)
 		}
@@ -854,7 +854,7 @@ func TestGenericPipeline_ProcessEntries(t *testing.T) {
 	})
 
 	t.Run("Handles transform error and closes Content", func(t *testing.T) {
-		closer := &trackingCloser{}
+		closer := new(trackingCloser{})
 		seq := func(yield func(scanner.Entry, error) bool) {
 			if !yield(scanner.Entry{Path: "bad.txt", Content: closer}, nil) {
 				return
@@ -896,7 +896,7 @@ func TestGenericPipeline_ProcessEntries(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		closer := &trackingCloser{}
+		closer := new(trackingCloser{})
 		seq := func(yield func(scanner.Entry, error) bool) {
 			_ = yield(scanner.Entry{Path: "file.txt", Content: closer}, nil)
 		}
@@ -922,7 +922,7 @@ func TestGenericPipeline_ProcessEntries(t *testing.T) {
 
 	t.Run("Propagates sequence error and closes Content", func(t *testing.T) {
 		seqErr := errors.New("upstream seq error")
-		closer := &trackingCloser{}
+		closer := new(trackingCloser{})
 		seq := func(yield func(scanner.Entry, error) bool) {
 			_ = yield(scanner.Entry{Path: "err.txt", Content: closer}, seqErr)
 		}
@@ -1029,8 +1029,8 @@ func TestGenericPipeline_ProcessEntries(t *testing.T) {
 
 func TestGenericPipeline_FilterEntries(t *testing.T) {
 	t.Run("Filters elements with predicate and closes dropped closer", func(t *testing.T) {
-		closer1 := &trackingCloser{}
-		closer2 := &trackingCloser{}
+		closer1 := new(trackingCloser{})
+		closer2 := new(trackingCloser{})
 
 		seq := func(yield func(*trackingCloser, error) bool) {
 			if !yield(closer1, nil) {
@@ -1064,8 +1064,8 @@ func TestGenericPipeline_FilterEntries(t *testing.T) {
 	})
 
 	t.Run("Filters Entry items and closes dropped Entry.Content", func(t *testing.T) {
-		c1 := &trackingCloser{}
-		c2 := &trackingCloser{}
+		c1 := new(trackingCloser{})
+		c2 := new(trackingCloser{})
 
 		seq := func(yield func(scanner.Entry, error) bool) {
 			if !yield(scanner.Entry{Path: "drop.txt", Content: c1}, nil) {

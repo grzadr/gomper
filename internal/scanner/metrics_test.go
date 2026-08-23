@@ -102,7 +102,7 @@ func TestCountLinesAndTokens(t *testing.T) {
 
 	t.Run("Reader error propagation", func(t *testing.T) {
 		expectedErr := errors.New("stream read failure")
-		_, _, err := scanner.CountLinesAndTokens(&metricErrorReader{err: expectedErr})
+		_, _, err := scanner.CountLinesAndTokens(new(metricErrorReader{err: expectedErr}))
 		if !errors.Is(err, expectedErr) {
 			t.Errorf("expected error %v, got %v", expectedErr, err)
 		}

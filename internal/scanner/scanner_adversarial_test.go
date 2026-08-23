@@ -21,10 +21,10 @@ type leakTrackingReadCloser struct {
 }
 
 func newLeakTrackingReadCloser(data []byte, onClose func()) *leakTrackingReadCloser {
-	return &leakTrackingReadCloser{
+	return new(leakTrackingReadCloser{
 		content: data,
 		onClose: onClose,
-	}
+	})
 }
 
 func (l *leakTrackingReadCloser) Read(p []byte) (int, error) {
