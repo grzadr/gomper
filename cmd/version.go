@@ -1,18 +1,39 @@
 package cmd
 
 import (
-	"fmt"
 	"runtime/debug"
 	"strings"
 )
 
-// Version can be set at build time via ldflags:
-// -ldflags "-X github.com/grzadr/gomper/cmd.Version=v1.0.0"
+// Version can be set at build time via ldflags or module versioning.
 var Version string
 
 type buildInfoReader func() (*debug.BuildInfo, bool)
 
 var readBuildInfo buildInfoReader = debug.ReadBuildInfo
+
+func getBuildInfo() (version, commit, date string) {
+	if readBuildInfo != nil {
+		if info, ok := readBuildInfo(); ok && info != nil {
+			if v := strings.TrimSpace(info.Main.Version); v != "" && v != "(devel)" {
+				version = v
+			}
+			for _, setting := range info.Settings {
+				switch setting.Key {
+				case "vcs.revision":
+					commit = setting.Value
+				case "vcs.time":
+					date = setting.Value
+				case "vcs.modified":
+					if setting.Value == "true" {
+						commit += "-dirty"
+					}
+				}
+			}
+		}
+	}
+	return version, commit, date
+}
 
 // getVersion returns the resolved version according to the following precedence:
 // 1. Explicit LDFlags (CI/CD / Release Artifacts)
@@ -29,35 +50,21 @@ func resolveVersion(ldflagVersion string, reader buildInfoReader) string {
 		return v
 	}
 
-	// 2 & 3. ReadBuildInfo (module version or VCS metadata)
 	if reader != nil {
-		if info, ok := reader(); ok && info != nil {
-			// 2. Module version from go install @tag / @latest
-			if v := strings.TrimSpace(info.Main.Version); v != "" && v != "(devel)" {
-				return v
-			}
+		origReader := readBuildInfo
+		readBuildInfo = reader
+		version, commit, _ := getBuildInfo()
+		readBuildInfo = origReader
 
-			// 3. VCS Metadata Fallback
-			var revision string
-			var modified bool
-			for _, setting := range info.Settings {
-				switch setting.Key {
-				case "vcs.revision":
-					revision = strings.TrimSpace(setting.Value)
-				case "vcs.modified":
-					modified = (strings.TrimSpace(setting.Value) == "true")
-				}
-			}
-
-			if revision != "" {
-				if modified {
-					return fmt.Sprintf("%s-dirty", revision)
-				}
-				return revision
-			}
+		if version != "" {
+			return version
+		}
+		if commit != "" && commit != "-dirty" {
+			return commit
 		}
 	}
 
 	// 4. Default Fallback
 	return "dev"
 }
+

@@ -14,7 +14,7 @@ all: build
 build:
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BIN_DIR)
-	go build -json -buildvcs=true -o $(BIN_DIR)/$(BINARY_NAME) ./main.go
+	go build -json -buildvcs=true -o $(BIN_DIR)/$(BINARY_NAME) .
 	@echo "Binary created at $(BIN_DIR)/$(BINARY_NAME)"
 
 # Run tests

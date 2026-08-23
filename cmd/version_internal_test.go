@@ -174,3 +174,84 @@ func TestGetVersion(t *testing.T) {
 		}
 	})
 }
+
+func TestGetBuildInfo(t *testing.T) {
+	origReader := readBuildInfo
+	defer func() {
+		readBuildInfo = origReader
+	}()
+
+	tests := []struct {
+		name        string
+		reader      buildInfoReader
+		wantVersion string
+		wantCommit  string
+		wantDate    string
+	}{
+		{
+			name: "Populated VCS settings and module version",
+			reader: func() (*debug.BuildInfo, bool) {
+				return &debug.BuildInfo{
+					Main: debug.Module{Version: "v1.0.0"},
+					Settings: []debug.BuildSetting{
+						{Key: "vcs.revision", Value: "1234567890ab"},
+						{Key: "vcs.time", Value: "2026-08-23T20:00:00Z"},
+						{Key: "vcs.modified", Value: "true"},
+					},
+				}, true
+			},
+			wantVersion: "v1.0.0",
+			wantCommit:  "1234567890ab-dirty",
+			wantDate:    "2026-08-23T20:00:00Z",
+		},
+		{
+			name: "Clean VCS build with (devel) module version",
+			reader: func() (*debug.BuildInfo, bool) {
+				return &debug.BuildInfo{
+					Main: debug.Module{Version: "(devel)"},
+					Settings: []debug.BuildSetting{
+						{Key: "vcs.revision", Value: "abcdef123456"},
+						{Key: "vcs.time", Value: "2026-08-23T19:00:00Z"},
+						{Key: "vcs.modified", Value: "false"},
+					},
+				}, true
+			},
+			wantVersion: "",
+			wantCommit:  "abcdef123456",
+			wantDate:    "2026-08-23T19:00:00Z",
+		},
+		{
+			name: "Reader returns ok=false",
+			reader: func() (*debug.BuildInfo, bool) {
+				return nil, false
+			},
+			wantVersion: "",
+			wantCommit:  "",
+			wantDate:    "",
+		},
+		{
+			name:        "Nil reader",
+			reader:      nil,
+			wantVersion: "",
+			wantCommit:  "",
+			wantDate:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			readBuildInfo = tt.reader
+			v, c, d := getBuildInfo()
+			if v != tt.wantVersion {
+				t.Errorf("getBuildInfo() version = %q, want %q", v, tt.wantVersion)
+			}
+			if c != tt.wantCommit {
+				t.Errorf("getBuildInfo() commit = %q, want %q", c, tt.wantCommit)
+			}
+			if d != tt.wantDate {
+				t.Errorf("getBuildInfo() date = %q, want %q", d, tt.wantDate)
+			}
+		})
+	}
+}
+
