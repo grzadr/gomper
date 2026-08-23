@@ -47,10 +47,10 @@ func NewDumper[T any](logger *slog.Logger, extractor EntryExtractor[T]) *Dumper[
 			return scanner.Entry{}
 		}
 	}
-	return &Dumper[T]{
+	return new(Dumper[T]{
 		logger:    logger,
 		extractor: extractor,
-	}
+	})
 }
 
 // XMLDumper is maintained as a type alias / specialized wrapper for scanner.Entry for backward compatibility.
@@ -107,7 +107,7 @@ type TreeNode struct {
 
 // BuildDirectoryTree generates an indented string representation of scanned entries.
 func BuildDirectoryTree(entries []scanner.Entry) string {
-	root := &TreeNode{Children: make(map[string]*TreeNode)}
+	root := new(TreeNode{Children: make(map[string]*TreeNode)})
 
 	for _, entry := range entries {
 		rel := filepath.ToSlash(entry.RelPath)
@@ -126,11 +126,11 @@ func BuildDirectoryTree(entries []scanner.Entry) string {
 
 			child, exists := curr.Children[part]
 			if !exists {
-				child = &TreeNode{
+				child = new(TreeNode{
 					Name:     part,
 					IsDir:    isDir,
 					Children: make(map[string]*TreeNode),
-				}
+				})
 				curr.Children[part] = child
 			} else if isDir {
 				child.IsDir = true
