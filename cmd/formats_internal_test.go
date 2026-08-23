@@ -213,3 +213,18 @@ func TestFormatsCommand_JSONAndQuery(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveFormatsPointer_RootAndEmpty(t *testing.T) {
+	data := FormatsOutput{
+		SupportedFormats: []scanner.FormatEntry{{Extension: ".go", Language: "go"}},
+	}
+	for _, ptr := range []string{"", "/"} {
+		got, err := resolveFormatsPointer(data, ptr)
+		if err != nil {
+			t.Fatalf("ptr=%q: unexpected error: %v", ptr, err)
+		}
+		if got == nil {
+			t.Errorf("ptr=%q: expected non-nil result", ptr)
+		}
+	}
+}
