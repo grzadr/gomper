@@ -100,7 +100,6 @@ func TestWalkPaths_EdgeCases(t *testing.T) {
 		}
 	})
 
-
 	t.Run("Non-existent root path yields false breaks early", func(t *testing.T) {
 		ctx := context.Background()
 		nonExistent := "/nonexistent/path/for/test"
@@ -262,7 +261,7 @@ func TestWalkPaths_Basic(t *testing.T) {
 
 	t.Run("Short-circuits on loop break", func(t *testing.T) {
 		tempDir := t.TempDir()
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			f := filepath.Join(tempDir, string(rune('a'+i))+".txt")
 			_ = os.WriteFile(f, []byte("test"), 0644)
 		}
@@ -286,7 +285,7 @@ func TestWalkPaths_Basic(t *testing.T) {
 
 	t.Run("Stops on context cancellation", func(t *testing.T) {
 		tempDir := t.TempDir()
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			f := filepath.Join(tempDir, string(rune('a'+i))+".txt")
 			_ = os.WriteFile(f, []byte("test"), 0644)
 		}
@@ -745,8 +744,3 @@ func TestWalkPaths_Metrics(t *testing.T) {
 		}
 	})
 }
-
-
-
-
-

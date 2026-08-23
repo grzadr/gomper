@@ -45,7 +45,7 @@ func CountLinesAndTokens(r io.Reader) (lines int, tokens int, err error) {
 			lines += bytes.Count(chunk, newlineSlice)
 
 			// 2. L1-hot cache token pass using jump tables
-			for i := 0; i < n; i++ {
+			for i := range n {
 				switch chunk[i] {
 				case ' ', '\t', '\n', '\r', '\v', '\f':
 					inToken = false
