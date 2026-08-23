@@ -40,10 +40,10 @@ func NewXMLDumper(logger *slog.Logger) *XMLDumper {
 
 // FileMetadata holds extracted metadata for a single file.
 type FileMetadata struct {
-	Path    string
-	RelPath string
-	Lang    string
-	Tokens  int
+	Path    string `json:"path,omitzero"`
+	RelPath string `json:"rel_path,omitzero"`
+	Lang    string `json:"lang,omitzero"`
+	Tokens  int    `json:"tokens,omitzero"`
 }
 
 // EstimateTokens calculates an approximate token count from file byte size (~4 chars per token).
@@ -77,9 +77,9 @@ func FormatLineNumberedContent(r io.Reader, w io.Writer, escapeXML bool) error {
 
 // TreeNode represents a node in the directory structure hierarchy.
 type TreeNode struct {
-	Name     string
-	IsDir    bool
-	Children map[string]*TreeNode
+	Name     string               `json:"name,omitzero"`
+	IsDir    bool                 `json:"is_dir,omitzero"`
+	Children map[string]*TreeNode `json:"children,omitzero"`
 }
 
 // BuildDirectoryTree generates an indented string representation of scanned entries.

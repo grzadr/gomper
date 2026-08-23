@@ -154,14 +154,14 @@ func LookupLanguage(path string) (string, bool) {
 
 // FormatEntry represents a file extension and its mapped language identifier.
 type FormatEntry struct {
-	Extension string
-	Language  string
+	Extension string `json:"extension,omitzero"`
+	Language  string `json:"language,omitzero"`
 }
 
 // SpecialFileEntry represents a special filename and its mapped language identifier.
 type SpecialFileEntry struct {
-	Filename string
-	Language string
+	Filename string `json:"filename,omitzero"`
+	Language string `json:"language,omitzero"`
 }
 
 // ListFormats returns sorted slices of supported file extensions and special filenames.

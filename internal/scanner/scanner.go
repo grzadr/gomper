@@ -15,17 +15,17 @@ import (
 
 // Entry encapsulates metadata and fs.FileInfo for a scanned file or directory.
 type Entry struct {
-	Path      string
-	RelPath   string
-	Root      string
-	Info      fs.FileInfo
-	IsDir     bool
-	Content   io.ReadCloser
-	Extension string
-	Language  string
-	Size      int64
-	Lines     int
-	Tokens    int
+	Path      string        `json:"path,omitzero"`
+	RelPath   string        `json:"rel_path,omitzero"`
+	Root      string        `json:"root,omitzero"`
+	Info      fs.FileInfo   `json:"-"`
+	IsDir     bool          `json:"is_dir,omitzero"`
+	Content   io.ReadCloser `json:"-"`
+	Extension string        `json:"extension,omitzero"`
+	Language  string        `json:"language,omitzero"`
+	Size      int64         `json:"size,omitzero"`
+	Lines     int           `json:"lines,omitzero"`
+	Tokens    int           `json:"tokens,omitzero"`
 }
 
 // FileResult is an alias for Entry representing a scanned file result.
