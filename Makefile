@@ -73,6 +73,6 @@ clean:
 	@rm -rf $(BIN_DIR) $(COVERAGE_DIR)
 
 # Run application
-run:
-	go run main.go
+run: build
+	./$(BIN_DIR)/$(BINARY_NAME)
 
