@@ -11,6 +11,7 @@ type OutputFormat string
 const (
 	FormatMarkdown OutputFormat = "markdown"
 	FormatXML      OutputFormat = "xml"
+	FormatJSON     OutputFormat = "json"
 )
 
 func (f OutputFormat) String() string {
@@ -19,7 +20,7 @@ func (f OutputFormat) String() string {
 
 func (f OutputFormat) IsValid() bool {
 	switch strings.ToLower(string(f)) {
-	case string(FormatMarkdown), string(FormatXML):
+	case string(FormatMarkdown), string(FormatXML), string(FormatJSON):
 		return true
 	default:
 		return false
@@ -32,7 +33,7 @@ func ParseOutputFormat(s string) (OutputFormat, error) {
 	if fmtVal.IsValid() {
 		return fmtVal, nil
 	}
-	return "", fmt.Errorf("invalid format %q: must be 'markdown' or 'xml'", s)
+	return "", fmt.Errorf("invalid format %q: must be 'markdown', 'xml', or 'json'", s)
 }
 
 // Set satisfies the pflag.Value interface for CLI flag binding.
