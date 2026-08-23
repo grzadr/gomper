@@ -97,3 +97,18 @@ func TestDefaultTokenizer(t *testing.T) {
 		t.Errorf("expected 3 tokens, got %d", count)
 	}
 }
+
+func BenchmarkWhitespaceTokenizer_CountTokens(b *testing.B) {
+	tokenizer := scanner.NewWhitespaceTokenizer()
+	input := strings.Repeat("word1 word2 word3\n", 1000)
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(input)))
+
+	for b.Loop() {
+		r := strings.NewReader(input)
+		if _, err := tokenizer.CountTokens(r); err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
+	}
+}

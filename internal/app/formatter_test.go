@@ -352,3 +352,35 @@ func TestNewListFormatter(t *testing.T) {
 		})
 	}
 }
+
+var benchEntry = scanner.Entry{
+	Path:      "/root/main.go",
+	RelPath:   "main.go",
+	Extension: ".go",
+	Language:  "go",
+	Size:      4096,
+	Lines:     200,
+	Tokens:    800,
+}
+
+func BenchmarkJSONFormatter_FormatEntry(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		var buf bytes.Buffer
+		f := app.NewJSONFormatter()
+		_ = f.WriteHeader(&buf)
+		_ = f.FormatEntry(&buf, benchEntry)
+		_ = f.Flush(&buf)
+	}
+}
+
+func BenchmarkDetailedFormatter_FormatEntry(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		var buf bytes.Buffer
+		f := app.NewDetailedFormatter()
+		_ = f.WriteHeader(&buf)
+		_ = f.FormatEntry(&buf, benchEntry)
+		_ = f.Flush(&buf)
+	}
+}
