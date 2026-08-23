@@ -47,7 +47,7 @@ type Service struct {
 }
 
 func NewService(app *setup.App) *Service {
-	return &Service{app: app}
+	return new(Service{app: app})
 }
 
 func buildCombinedPatterns(profiles []string, userPatterns []string) ([]string, error) {

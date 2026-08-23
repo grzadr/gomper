@@ -34,7 +34,7 @@ type StandardFormatter struct {
 
 // NewStandardFormatter creates a StandardFormatter instance.
 func NewStandardFormatter(long bool) *StandardFormatter {
-	return &StandardFormatter{Long: long}
+	return new(StandardFormatter{Long: long})
 }
 
 // WriteHeader writes header if needed (no-op for StandardFormatter).
@@ -81,7 +81,7 @@ type DetailedFormatter struct{}
 
 // NewDetailedFormatter creates a DetailedFormatter instance.
 func NewDetailedFormatter() *DetailedFormatter {
-	return &DetailedFormatter{}
+	return new(DetailedFormatter{})
 }
 
 // WriteHeader writes fixed-width column headers directly to w.
@@ -144,7 +144,7 @@ type JSONFormatter struct {
 
 // NewJSONFormatter creates a JSONFormatter instance.
 func NewJSONFormatter() *JSONFormatter {
-	return &JSONFormatter{first: true}
+	return new(JSONFormatter{first: true})
 }
 
 // WriteHeader writes the opening bracket for the JSON array.

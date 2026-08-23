@@ -272,14 +272,14 @@ func TestJSONFormatter(t *testing.T) {
 	t.Run("I/O error handling", func(t *testing.T) {
 		// WriteHeader error
 		f1 := app.NewJSONFormatter()
-		if err := f1.WriteHeader(&errWriter{failOnWrite: 1}); err == nil {
+		if err := f1.WriteHeader(new(errWriter{failOnWrite: 1})); err == nil {
 			t.Errorf("expected WriteHeader error with failing writer, got nil")
 		}
 
 		// FormatEntry first entry error
 		f2 := app.NewJSONFormatter()
-		_ = f2.WriteHeader(&bytes.Buffer{})
-		if err := f2.FormatEntry(&errWriter{failOnWrite: 1}, scanner.Entry{Path: "test"}); err == nil {
+		_ = f2.WriteHeader(new(bytes.Buffer))
+		if err := f2.FormatEntry(new(errWriter{failOnWrite: 1}), scanner.Entry{Path: "test"}); err == nil {
 			t.Errorf("expected FormatEntry error on first entry with failing writer, got nil")
 		}
 
@@ -288,7 +288,7 @@ func TestJSONFormatter(t *testing.T) {
 		var buf3 bytes.Buffer
 		_ = f3.WriteHeader(&buf3)
 		_ = f3.FormatEntry(&buf3, scanner.Entry{Path: "test1"})
-		if err := f3.FormatEntry(&errWriter{failOnWrite: 1}, scanner.Entry{Path: "test2"}); err == nil {
+		if err := f3.FormatEntry(new(errWriter{failOnWrite: 1}), scanner.Entry{Path: "test2"}); err == nil {
 			t.Errorf("expected FormatEntry error on second entry comma write, got nil")
 		}
 
@@ -297,14 +297,14 @@ func TestJSONFormatter(t *testing.T) {
 		var buf4 bytes.Buffer
 		_ = f4.WriteHeader(&buf4)
 		_ = f4.FormatEntry(&buf4, scanner.Entry{Path: "test1"})
-		if err := f4.Flush(&errWriter{failOnWrite: 1}); err == nil {
+		if err := f4.Flush(new(errWriter{failOnWrite: 1})); err == nil {
 			t.Errorf("expected Flush error on non-empty array with failing writer, got nil")
 		}
 
 		// Flush with count == 0 error
 		f5 := app.NewJSONFormatter()
-		_ = f5.WriteHeader(&bytes.Buffer{})
-		if err := f5.Flush(&errWriter{failOnWrite: 1}); err == nil {
+		_ = f5.WriteHeader(new(bytes.Buffer))
+		if err := f5.Flush(new(errWriter{failOnWrite: 1})); err == nil {
 			t.Errorf("expected Flush error on empty array with failing writer, got nil")
 		}
 	})
