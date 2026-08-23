@@ -510,6 +510,25 @@ func TestCLI_FormatsCommand(t *testing.T) {
 	}
 }
 
+func TestCLI_FormatsCommand_JSON(t *testing.T) {
+	rootCmd := cmd.NewRootCommand(nil)
+	outBuf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	rootCmd.SetOut(outBuf)
+	rootCmd.SetErr(errBuf)
+
+	rootCmd.SetArgs([]string{"formats", "--json"})
+	err := rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error running formats --json: %v", err)
+	}
+
+	output := outBuf.String()
+	if !strings.Contains(output, `"supported_formats"`) || !strings.Contains(output, `"special_filenames"`) {
+		t.Errorf("expected JSON output containing supported_formats and special_filenames, got: %s", output)
+	}
+}
+
 func TestCLI_DumpCommand(t *testing.T) {
 	t.Run("Requires at least one path argument or config path", func(t *testing.T) {
 		rootCmd := cmd.NewRootCommand(nil)
