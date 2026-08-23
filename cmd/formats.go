@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"encoding/json/jsontext"
-	"encoding/json/v2"
+	json "encoding/json/v2"
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/grzadr/gomper/internal/scanner"
@@ -50,9 +51,9 @@ func NewFormatsCommand() *cobra.Command {
 						return fmt.Errorf("invalid json pointer query %q", query)
 					}
 
-					resolved, resolveErr := resolveJSONPointer(formatsData, ptr)
-					if resolveErr != nil {
-						return resolveErr
+					resolved, err := resolveFormatsPointer(formatsData, query)
+					if err != nil {
+						return err
 					}
 					dataToEncode = resolved
 				}
@@ -84,52 +85,88 @@ func NewFormatsCommand() *cobra.Command {
 	return cmd
 }
 
-func resolveJSONPointer(data FormatsOutput, ptr jsontext.Pointer) (any, error) {
-	var current any = data
-	for tok := range ptr.Tokens() {
-		switch v := current.(type) {
-		case FormatsOutput:
-			switch tok {
-			case "supported_formats":
-				current = v.SupportedFormats
-			case "special_filenames":
-				current = v.SpecialFilenames
-			default:
-				return nil, fmt.Errorf("json pointer token %q not found in root", tok)
-			}
-		case []scanner.FormatEntry:
-			idx, err := strconv.Atoi(tok)
-			if err != nil || idx < 0 || idx >= len(v) {
-				return nil, fmt.Errorf("invalid or out-of-range index %q for supported_formats", tok)
-			}
-			current = v[idx]
-		case []scanner.SpecialFileEntry:
-			idx, err := strconv.Atoi(tok)
-			if err != nil || idx < 0 || idx >= len(v) {
-				return nil, fmt.Errorf("invalid or out-of-range index %q for special_filenames", tok)
-			}
-			current = v[idx]
-		case scanner.FormatEntry:
-			switch tok {
-			case "extension":
-				current = v.Extension
-			case "language":
-				current = v.Language
-			default:
-				return nil, fmt.Errorf("unknown field %q for FormatEntry", tok)
-			}
-		case scanner.SpecialFileEntry:
-			switch tok {
-			case "filename":
-				current = v.Filename
-			case "language":
-				current = v.Language
-			default:
-				return nil, fmt.Errorf("unknown field %q for SpecialFileEntry", tok)
-			}
-		default:
-			return nil, fmt.Errorf("cannot navigate into value of type %T with token %q", current, tok)
-		}
+// resolveFormatsPointer walks a FormatsOutput value using an RFC 6901 JSON pointer string,
+// returning the resolved value or a descriptive error.
+func resolveFormatsPointer(data FormatsOutput, ptr string) (any, error) {
+	if ptr == "" || ptr == "/" {
+		return data, nil
 	}
-	return current, nil
+
+	// RFC 6901: split on "/" after stripping the leading "/"
+	tokens := strings.Split(strings.TrimPrefix(ptr, "/"), "/")
+
+	// Unescape RFC 6901 tokens (~1 → /, ~0 → ~)
+	unescape := func(s string) string {
+		s = strings.ReplaceAll(s, "~1", "/")
+		s = strings.ReplaceAll(s, "~0", "~")
+		return s
+	}
+
+	root := unescape(tokens[0])
+	rest := tokens[1:]
+
+	// Dispatch on the root token
+	switch root {
+	case "supported_formats":
+		return resolveSlicePointer("supported_formats", data.SupportedFormats, rest,
+			func(e scanner.FormatEntry, field string) (any, error) {
+				switch field {
+				case "extension":
+					return e.Extension, nil
+				case "language":
+					return e.Language, nil
+				default:
+					return nil, fmt.Errorf("unknown field %q on FormatEntry", field)
+				}
+			},
+		)
+	case "special_filenames":
+		return resolveSlicePointer("special_filenames", data.SpecialFilenames, rest,
+			func(e scanner.SpecialFileEntry, field string) (any, error) {
+				switch field {
+				case "filename":
+					return e.Filename, nil
+				case "language":
+					return e.Language, nil
+				default:
+					return nil, fmt.Errorf("unknown field %q on SpecialFileEntry", field)
+				}
+			},
+		)
+	default:
+		return nil, fmt.Errorf("key %q not found in root FormatsOutput", root)
+	}
+}
+
+// resolveSlicePointer handles navigation into a typed slice, then optionally into a struct field.
+func resolveSlicePointer[T any](sliceName string, slice []T, tokens []string, fieldResolver func(T, string) (any, error)) (any, error) {
+	if len(tokens) == 0 {
+		return slice, nil
+	}
+
+	idxStr := tokens[0]
+	idx, err := strconv.Atoi(idxStr)
+	if err != nil || idx < 0 || idx >= len(slice) {
+		return nil, fmt.Errorf("invalid or out-of-range index %q for %s (length %d)", idxStr, sliceName, len(slice))
+	}
+
+	entry := slice[idx]
+	remaining := tokens[1:]
+
+	if len(remaining) == 0 {
+		return entry, nil
+	}
+
+	field := remaining[0]
+	val, err := fieldResolver(entry, field)
+	if err != nil {
+		return nil, err
+	}
+
+	// Scalars cannot be navigated into
+	if len(remaining) > 1 {
+		return nil, fmt.Errorf("cannot navigate into value of type %T at %q", val, field)
+	}
+
+	return val, nil
 }
