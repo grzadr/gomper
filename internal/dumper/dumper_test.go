@@ -490,3 +490,86 @@ func (f *failWriter) Write(p []byte) (n int, err error) {
 	}
 	return len(p), nil
 }
+
+func TestGenericDumper(t *testing.T) {
+	type CustomItem struct {
+		filePath string
+		content  string
+	}
+
+	extractor := func(item CustomItem) scanner.Entry {
+		return scanner.Entry{
+			Path:    item.filePath,
+			RelPath: item.filePath,
+			IsDir:   false,
+			Info:    dummyFileInfo{name: item.filePath, size: int64(len(item.content))},
+			Content: io.NopCloser(strings.NewReader(item.content)),
+		}
+	}
+
+	d := dumper.NewDumper(nil, extractor)
+
+	items := []CustomItem{
+		{filePath: "app.go", content: "package main\n\nfunc main() {}\n"},
+	}
+
+	seq := func(yield func(CustomItem, error) bool) {
+		for _, item := range items {
+			if !yield(item, nil) {
+				return
+			}
+		}
+	}
+
+	t.Run("GenerateXML with custom generic type", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := d.GenerateXML(context.Background(), seq, "custom instructions", &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, `<file path="app.go" language="go"`) {
+			t.Errorf("expected XML output for app.go, got: %s", out)
+		}
+	})
+
+	t.Run("GenerateMarkdown with custom generic type", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := d.GenerateMarkdown(context.Background(), seq, "custom instructions", &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "### File: `app.go`") {
+			t.Errorf("expected Markdown output for app.go, got: %s", out)
+		}
+	})
+
+	t.Run("NewDumper with nil extractor defaults to scanner.Entry extractor", func(t *testing.T) {
+		dDefault := dumper.NewDumper[scanner.Entry](nil, nil)
+		entrySeq := entriesToSeq([]scanner.Entry{
+			{Path: "test.go", RelPath: "test.go", Content: io.NopCloser(strings.NewReader("package test\n"))},
+		})
+		var buf bytes.Buffer
+		err := dDefault.GenerateXML(context.Background(), entrySeq, "", &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(buf.String(), `<file path="test.go"`) {
+			t.Errorf("expected output to contain test.go, got: %s", buf.String())
+		}
+	})
+
+	t.Run("NewDumper with nil extractor for non-Entry type", func(t *testing.T) {
+		dInt := dumper.NewDumper[int](nil, nil)
+		intSeq := func(yield func(int, error) bool) {
+			_ = yield(42, nil)
+		}
+		var buf bytes.Buffer
+		err := dInt.GenerateXML(context.Background(), intSeq, "", &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
