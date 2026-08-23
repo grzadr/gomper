@@ -1,6 +1,8 @@
 package app
 
 import (
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"strings"
@@ -14,6 +16,7 @@ type ListFormat string
 const (
 	ListFormatStandard ListFormat = "standard"
 	ListFormatDetailed ListFormat = "detailed"
+	ListFormatJSON     ListFormat = "json"
 )
 
 // ListFormatter defines the streaming contract for formatting scanned file entries.
@@ -133,6 +136,63 @@ func (f *DetailedFormatter) RequiresMetrics() bool {
 	return true
 }
 
+// JSONFormatter formats file entries as a streaming JSON array with zero intermediate buffering.
+type JSONFormatter struct {
+	first bool
+	count int
+}
+
+// NewJSONFormatter creates a JSONFormatter instance.
+func NewJSONFormatter() *JSONFormatter {
+	return &JSONFormatter{first: true}
+}
+
+// WriteHeader writes the opening bracket for the JSON array.
+func (f *JSONFormatter) WriteHeader(w io.Writer) error {
+	f.first = true
+	f.count = 0
+	_, err := io.WriteString(w, "[\n")
+	return err
+}
+
+// FormatEntry writes a single entry directly to w formatted as JSON.
+func (f *JSONFormatter) FormatEntry(w io.Writer, entry scanner.Entry) error {
+	if !f.first {
+		if _, err := io.WriteString(w, ",\n"); err != nil {
+			return err
+		}
+	}
+	f.first = false
+	f.count++
+
+	displayPath := entry.RelPath
+	if displayPath == "." || displayPath == "" {
+		displayPath = entry.Path
+	}
+	entry.RelPath = displayPath
+
+	if entry.Size == 0 && entry.Info != nil {
+		entry.Size = entry.Info.Size()
+	}
+
+	return json.MarshalWrite(w, entry, jsontext.WithIndent("  "), json.Deterministic(true))
+}
+
+// Flush closes the JSON array.
+func (f *JSONFormatter) Flush(w io.Writer) error {
+	if f.count > 0 {
+		_, err := io.WriteString(w, "\n]\n")
+		return err
+	}
+	_, err := io.WriteString(w, "]\n")
+	return err
+}
+
+// RequiresMetrics indicates that JSONFormatter requires line and token metrics.
+func (f *JSONFormatter) RequiresMetrics() bool {
+	return true
+}
+
 // NewListFormatter returns the appropriate ListFormatter for the given format string and long flag.
 func NewListFormatter(format string, long bool) (ListFormatter, error) {
 	trimmed := strings.ToLower(strings.TrimSpace(format))
@@ -141,7 +201,9 @@ func NewListFormatter(format string, long bool) (ListFormatter, error) {
 		return NewStandardFormatter(long), nil
 	case string(ListFormatDetailed):
 		return NewDetailedFormatter(), nil
+	case string(ListFormatJSON):
+		return NewJSONFormatter(), nil
 	default:
-		return nil, fmt.Errorf("unsupported list format %q: must be 'standard' or 'detailed'", format)
+		return nil, fmt.Errorf("unsupported list format %q: must be 'standard', 'detailed', or 'json'", format)
 	}
 }

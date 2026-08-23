@@ -171,6 +171,158 @@ func TestDetailedFormatter(t *testing.T) {
 	})
 }
 
+func TestJSONFormatter(t *testing.T) {
+	f := app.NewJSONFormatter()
+	if !f.RequiresMetrics() {
+		t.Errorf("expected RequiresMetrics to be true")
+	}
+
+	t.Run("Empty entries renders empty JSON array", func(t *testing.T) {
+		formatter := app.NewJSONFormatter()
+		var buf bytes.Buffer
+		if err := formatter.WriteHeader(&buf); err != nil {
+			t.Fatalf("unexpected WriteHeader error: %v", err)
+		}
+		if err := formatter.Flush(&buf); err != nil {
+			t.Fatalf("unexpected Flush error: %v", err)
+		}
+		out := buf.String()
+		if out != "[\n]\n" {
+			t.Errorf("expected empty array output '[\n]\n', got: %q", out)
+		}
+	})
+
+	t.Run("Single entry renders valid JSON array with fallbacks", func(t *testing.T) {
+		formatter := app.NewJSONFormatter()
+		var buf bytes.Buffer
+		if err := formatter.WriteHeader(&buf); err != nil {
+			t.Fatalf("unexpected WriteHeader error: %v", err)
+		}
+
+		entry := scanner.Entry{
+			Path:      "/root/nested/doc.md",
+			RelPath:   "",
+			Extension: ".md",
+			Language:  "markdown",
+			Size:      0,
+			Info:      dummyFileInfo{mode: 0644},
+			Lines:     80,
+			Tokens:    300,
+		}
+
+		if err := formatter.FormatEntry(&buf, entry); err != nil {
+			t.Fatalf("unexpected FormatEntry error: %v", err)
+		}
+		if err := formatter.Flush(&buf); err != nil {
+			t.Fatalf("unexpected Flush error: %v", err)
+		}
+
+		out := buf.String()
+		if !strings.Contains(out, `"/root/nested/doc.md"`) {
+			t.Errorf("expected fallback path in JSON output, got:\n%s", out)
+		}
+		if !strings.Contains(out, `"size": 100`) {
+			t.Errorf("expected fallback size in JSON output, got:\n%s", out)
+		}
+	})
+
+	t.Run("Multiple entries render valid JSON array", func(t *testing.T) {
+		formatter := app.NewJSONFormatter()
+		var buf bytes.Buffer
+		if err := formatter.WriteHeader(&buf); err != nil {
+			t.Fatalf("unexpected WriteHeader error: %v", err)
+		}
+
+		entries := []scanner.Entry{
+			{
+				Path:      "/root/main.go",
+				RelPath:   "main.go",
+				Extension: ".go",
+				Language:  "go",
+				Size:      250,
+				Lines:     20,
+				Tokens:    45,
+			},
+			{
+				Path:      "/root/Makefile",
+				RelPath:   ".",
+				Extension: "-",
+				Language:  "makefile",
+				Size:      1024,
+				Lines:     50,
+				Tokens:    120,
+			},
+		}
+
+		for _, e := range entries {
+			if err := formatter.FormatEntry(&buf, e); err != nil {
+				t.Fatalf("unexpected FormatEntry error: %v", err)
+			}
+		}
+		if err := formatter.Flush(&buf); err != nil {
+			t.Fatalf("unexpected Flush error: %v", err)
+		}
+
+		out := buf.String()
+		if !strings.Contains(out, `"rel_path": "main.go"`) || !strings.Contains(out, `"rel_path": "/root/Makefile"`) {
+			t.Errorf("expected both entries in JSON output, got:\n%s", out)
+		}
+	})
+
+	t.Run("I/O error handling", func(t *testing.T) {
+		// WriteHeader error
+		f1 := app.NewJSONFormatter()
+		if err := f1.WriteHeader(&errWriter{failOnWrite: 1}); err == nil {
+			t.Errorf("expected WriteHeader error with failing writer, got nil")
+		}
+
+		// FormatEntry first entry error
+		f2 := app.NewJSONFormatter()
+		_ = f2.WriteHeader(&bytes.Buffer{})
+		if err := f2.FormatEntry(&errWriter{failOnWrite: 1}, scanner.Entry{Path: "test"}); err == nil {
+			t.Errorf("expected FormatEntry error on first entry with failing writer, got nil")
+		}
+
+		// FormatEntry second entry comma error
+		f3 := app.NewJSONFormatter()
+		var buf3 bytes.Buffer
+		_ = f3.WriteHeader(&buf3)
+		_ = f3.FormatEntry(&buf3, scanner.Entry{Path: "test1"})
+		if err := f3.FormatEntry(&errWriter{failOnWrite: 1}, scanner.Entry{Path: "test2"}); err == nil {
+			t.Errorf("expected FormatEntry error on second entry comma write, got nil")
+		}
+
+		// Flush with count > 0 error
+		f4 := app.NewJSONFormatter()
+		var buf4 bytes.Buffer
+		_ = f4.WriteHeader(&buf4)
+		_ = f4.FormatEntry(&buf4, scanner.Entry{Path: "test1"})
+		if err := f4.Flush(&errWriter{failOnWrite: 1}); err == nil {
+			t.Errorf("expected Flush error on non-empty array with failing writer, got nil")
+		}
+
+		// Flush with count == 0 error
+		f5 := app.NewJSONFormatter()
+		_ = f5.WriteHeader(&bytes.Buffer{})
+		if err := f5.Flush(&errWriter{failOnWrite: 1}); err == nil {
+			t.Errorf("expected Flush error on empty array with failing writer, got nil")
+		}
+	})
+}
+
+type errWriter struct {
+	failOnWrite int
+	writes      int
+}
+
+func (e *errWriter) Write(p []byte) (int, error) {
+	e.writes++
+	if e.failOnWrite == 0 || e.writes >= e.failOnWrite {
+		return 0, os.ErrPermission
+	}
+	return len(p), nil
+}
+
 func TestNewListFormatter(t *testing.T) {
 	tests := []struct {
 		format    string
@@ -183,7 +335,8 @@ func TestNewListFormatter(t *testing.T) {
 		{" STANDARD ", true, "*app.StandardFormatter", false},
 		{"detailed", false, "*app.DetailedFormatter", false},
 		{" Detailed ", false, "*app.DetailedFormatter", false},
-		{"json", false, "", true},
+		{"json", false, "*app.JSONFormatter", false},
+		{" JSON ", true, "*app.JSONFormatter", false},
 		{"invalid", false, "", true},
 	}
 
