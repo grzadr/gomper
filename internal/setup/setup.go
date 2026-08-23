@@ -20,15 +20,15 @@ func NewApp(level slog.Level) *App {
 	lvl := new(slog.LevelVar)
 	lvl.Set(level)
 
-	return &App{
+	return new(App{
 		logLevel: lvl,
 		logger: slog.New(
 			slog.NewTextHandler(
 				os.Stderr,
-				&slog.HandlerOptions{Level: lvl},
+				new(slog.HandlerOptions{Level: lvl}),
 			),
 		),
-	}
+	})
 }
 
 // ParseLogLevel converts a string ("debug", "info", "warn", "error") into a slog.Level.
