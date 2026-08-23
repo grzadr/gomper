@@ -118,11 +118,11 @@ func (f *Filter) ShouldIgnore(name string, relPath string, isDir ...bool) bool {
 	if len(isDir) > 0 {
 		isDirectory = isDir[0]
 	}
-	slashRel := filepath.ToSlash(relPath)
+	relPathSlash := filepath.ToSlash(relPath)
 
 	// Step 1: Evaluate ignore dot files flag
 	if f.ignoreDotfiles {
-		baseName := filepath.Base(slashRel)
+		baseName := filepath.Base(relPathSlash)
 		if strings.HasPrefix(name, ".") || strings.HasPrefix(baseName, ".") {
 			return true
 		}
@@ -133,7 +133,7 @@ func (f *Filter) ShouldIgnore(name string, relPath string, isDir ...bool) bool {
 		if match, _ := re.MatchString(name); match {
 			return true
 		}
-		if match, _ := re.MatchString(slashRel); match {
+		if match, _ := re.MatchString(relPathSlash); match {
 			return true
 		}
 	}
@@ -158,7 +158,7 @@ func (f *Filter) ShouldIgnore(name string, relPath string, isDir ...bool) bool {
 		if match, _ := re.MatchString(name); match {
 			return true
 		}
-		if match, _ := re.MatchString(slashRel); match {
+		if match, _ := re.MatchString(relPathSlash); match {
 			return true
 		}
 	}
@@ -438,7 +438,7 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 
 // ProcessEntries executes a strongly-typed generic transformation on an Entry sequence,
 // ensuring underlying resource closures (e.g. entry.Content) are closed on error or short-circuit.
-func ProcessEntries[T any](ctx context.Context, seq iter.Seq2[Entry, error], transform func(Entry) (T, error)) iter.Seq2[T, error] {
+func (s *Scanner) ProcessEntries[T any](ctx context.Context, seq iter.Seq2[Entry, error], transform func(Entry) (T, error)) iter.Seq2[T, error] {
 	return func(yield func(T, error) bool) {
 		for entry, err := range seq {
 			if ctx.Err() != nil {
@@ -479,7 +479,7 @@ func ProcessEntries[T any](ctx context.Context, seq iter.Seq2[Entry, error], tra
 
 // FilterEntries filters an iter.Seq2[T, error] with a predicate function.
 // If an entry is dropped, any io.Closer or Entry.Content is safely closed.
-func FilterEntries[T any](seq iter.Seq2[T, error], predicate func(T) bool) iter.Seq2[T, error] {
+func (s *Scanner) FilterEntries[T any](seq iter.Seq2[T, error], predicate func(T) bool) iter.Seq2[T, error] {
 	return func(yield func(T, error) bool) {
 		for item, err := range seq {
 			if err != nil {
@@ -504,10 +504,17 @@ func FilterEntries[T any](seq iter.Seq2[T, error], predicate func(T) bool) iter.
 }
 
 // CollectEntries collects all items from an iterator into a slice.
-func CollectEntries[T any](seq iter.Seq2[T, error]) ([]T, error) {
+func (s *Scanner) CollectEntries[T any](seq iter.Seq2[T, error]) ([]T, error) {
 	var items []T
 	for item, err := range seq {
 		if err != nil {
+			for _, i := range items {
+				if closer, ok := any(i).(io.Closer); ok && closer != nil {
+					_ = closer.Close()
+				} else if e, ok := any(i).(Entry); ok && e.Content != nil {
+					_ = e.Content.Close()
+				}
+			}
 			return nil, err
 		}
 		items = append(items, item)
@@ -516,7 +523,7 @@ func CollectEntries[T any](seq iter.Seq2[T, error]) ([]T, error) {
 }
 
 // BatchEntries batches items from an iterator into slices of at most batchSize.
-func BatchEntries[T any](seq iter.Seq2[T, error], batchSize int) iter.Seq2[[]T, error] {
+func (s *Scanner) BatchEntries[T any](seq iter.Seq2[T, error], batchSize int) iter.Seq2[[]T, error] {
 	if batchSize <= 0 {
 		batchSize = 1
 	}
@@ -526,6 +533,13 @@ func BatchEntries[T any](seq iter.Seq2[T, error], batchSize int) iter.Seq2[[]T, 
 			if err != nil {
 				if len(batch) > 0 {
 					if !yield(batch, nil) {
+						for _, bItem := range batch {
+							if closer, ok := any(bItem).(io.Closer); ok && closer != nil {
+								_ = closer.Close()
+							} else if e, ok := any(bItem).(Entry); ok && e.Content != nil {
+								_ = e.Content.Close()
+							}
+						}
 						return
 					}
 					batch = nil
@@ -539,15 +553,52 @@ func BatchEntries[T any](seq iter.Seq2[T, error], batchSize int) iter.Seq2[[]T, 
 			batch = append(batch, item)
 			if len(batch) >= batchSize {
 				if !yield(batch, nil) {
+					for _, bItem := range batch {
+						if closer, ok := any(bItem).(io.Closer); ok && closer != nil {
+							_ = closer.Close()
+						} else if e, ok := any(bItem).(Entry); ok && e.Content != nil {
+							_ = e.Content.Close()
+						}
+					}
 					return
 				}
 				batch = nil
 			}
 		}
 		if len(batch) > 0 {
-			_ = yield(batch, nil)
+			if !yield(batch, nil) {
+				for _, bItem := range batch {
+					if closer, ok := any(bItem).(io.Closer); ok && closer != nil {
+						_ = closer.Close()
+					} else if e, ok := any(bItem).(Entry); ok && e.Content != nil {
+						_ = e.Content.Close()
+					}
+				}
+			}
 		}
 	}
 }
 
+// ProcessEntries is a package-level convenience wrapper around (*Scanner).ProcessEntries
+// that does not require constructing a Scanner instance.
+func ProcessEntries[T any](ctx context.Context, seq iter.Seq2[Entry, error], transform func(Entry) (T, error)) iter.Seq2[T, error] {
+	return (*Scanner)(nil).ProcessEntries(ctx, seq, transform)
+}
 
+// FilterEntries is a package-level convenience wrapper around (*Scanner).FilterEntries
+// that does not require constructing a Scanner instance.
+func FilterEntries[T any](seq iter.Seq2[T, error], predicate func(T) bool) iter.Seq2[T, error] {
+	return (*Scanner)(nil).FilterEntries(seq, predicate)
+}
+
+// CollectEntries is a package-level convenience wrapper around (*Scanner).CollectEntries
+// that does not require constructing a Scanner instance.
+func CollectEntries[T any](seq iter.Seq2[T, error]) ([]T, error) {
+	return (*Scanner)(nil).CollectEntries(seq)
+}
+
+// BatchEntries is a package-level convenience wrapper around (*Scanner).BatchEntries
+// that does not require constructing a Scanner instance.
+func BatchEntries[T any](seq iter.Seq2[T, error], batchSize int) iter.Seq2[[]T, error] {
+	return (*Scanner)(nil).BatchEntries(seq, batchSize)
+}
