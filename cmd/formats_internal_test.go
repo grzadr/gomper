@@ -205,7 +205,7 @@ func TestFormatsCommand_JSONAndQuery(t *testing.T) {
 
 	t.Run("JSON streaming writer error", func(t *testing.T) {
 		formatsCmd := NewFormatsCommand()
-		formatsCmd.SetOut(&errOutWriter{failOnWrite: 1})
+		formatsCmd.SetOut(new(errOutWriter{failOnWrite: 1}))
 		formatsCmd.SetArgs([]string{"--json"})
 
 		if err := formatsCmd.Execute(); err == nil {
