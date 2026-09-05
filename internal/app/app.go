@@ -105,12 +105,7 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 		return err
 	}
 
-	scannerSvc := new(scanner.Scanner)
-	nonDirEntries := scannerSvc.FilterEntries(walkPathsFunc(ctx, paths, filter, scanOpts...), func(e scanner.Entry) bool {
-		return !e.IsDir
-	})
-
-	for entry, err := range nonDirEntries {
+	for entry, err := range walkPathsFunc(ctx, paths, filter, scanOpts...) {
 		if err != nil {
 			logger.ErrorContext(ctx, "scan error encountered", slog.String("path", entry.Path), slog.Any("error", err))
 			_, _ = fmt.Fprintf(out, "[ERROR] %s: %v\n", entry.Path, err)
@@ -119,6 +114,10 @@ func (s *Service) List(ctx context.Context, out io.Writer, paths []string, opts 
 
 		if entry.Content != nil {
 			_ = entry.Content.Close()
+		}
+
+		if entry.IsDir {
+			continue
 		}
 
 		if err := formatter.FormatEntry(out, entry); err != nil {
@@ -159,7 +158,7 @@ func (s *Service) Dump(ctx context.Context, out io.Writer, paths []string, opts 
 	}
 
 	writeFunc := func(ctx context.Context, w io.Writer) error {
-		d := dumper.NewDumper(logger, func(e scanner.Entry) scanner.Entry { return e })
+		d := dumper.NewDumper(logger)
 		seq := walkPathsFunc(ctx, paths, filter)
 		switch opts.Format {
 		case FormatXML:
@@ -171,11 +170,7 @@ func (s *Service) Dump(ctx context.Context, out io.Writer, paths []string, opts 
 
 	if opts.OutputPath != "" && opts.OutputPath != "stdout" {
 		_, _ = fmt.Fprintf(out, "Dumping %d root path(s) in %s format to %s...\n", len(paths), opts.Format, opts.OutputPath)
-		tx := filetx.NewTx(opts.OutputPath, func(ctx context.Context, w io.Writer) (struct{}, error) {
-			return struct{}{}, writeFunc(ctx, w)
-		})
-		_, err := tx.Execute(ctx)
-		return err
+		return filetx.WriteAtomically(ctx, opts.OutputPath, writeFunc)
 	}
 
 	return writeFunc(ctx, out)

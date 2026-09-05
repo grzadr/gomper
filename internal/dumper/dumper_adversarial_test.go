@@ -14,52 +14,27 @@ import (
 	"github.com/grzadr/gomper/internal/scanner"
 )
 
-type DomainModule struct {
-	Namespace   string
-	FileName    string
-	Code        string
-	TokenBudget int
-	Tags        []string
-}
+func TestAdversarial_DumperDomain(t *testing.T) {
+	d := dumper.NewDumper(nil)
 
-func TestAdversarial_DumperGenericDomain(t *testing.T) {
-	extractor := func(m DomainModule) scanner.Entry {
+	entryFor := func(namespace, fileName, code string) scanner.Entry {
+		path := fmt.Sprintf("%s/%s", namespace, fileName)
 		return scanner.Entry{
-			Path:    fmt.Sprintf("%s/%s", m.Namespace, m.FileName),
-			RelPath: fmt.Sprintf("%s/%s", m.Namespace, m.FileName),
+			Path:    path,
+			RelPath: path,
 			IsDir:   false,
-			Info:    dummyFileInfo{name: m.FileName, size: int64(len(m.Code))},
-			Content: io.NopCloser(strings.NewReader(m.Code)),
+			Info:    dummyFileInfo{name: fileName, size: int64(len(code))},
+			Content: io.NopCloser(strings.NewReader(code)),
 		}
 	}
 
-	d := dumper.NewDumper(nil, extractor)
-
-	t.Run("Custom domain type with XML entity characters and markdown code blocks", func(t *testing.T) {
-		modules := []DomainModule{
-			{
-				Namespace:   "core",
-				FileName:    "logic.go",
-				Code:        "package core\n\n// Check if x < 10 && y > 20 || str == \"<foo>\"\nfunc Check() bool {\n\treturn true\n}\n",
-				TokenBudget: 50,
-				Tags:        []string{"core", "parser"},
-			},
-			{
-				Namespace:   "docs",
-				FileName:    "guide.md",
-				Code:        "# Guide\n\n```xml\n<config key=\"value\">&amp;</config>\n```\n",
-				TokenBudget: 30,
-				Tags:        []string{"docs"},
-			},
+	t.Run("Domain entries with XML entity characters and markdown code blocks", func(t *testing.T) {
+		entries := []scanner.Entry{
+			entryFor("core", "logic.go", "package core\n\n// Check if x < 10 && y > 20 || str == \"<foo>\"\nfunc Check() bool {\n\treturn true\n}\n"),
+			entryFor("docs", "guide.md", "# Guide\n\n```xml\n<config key=\"value\">&amp;</config>\n```\n"),
 		}
 
-		seq := func(yield func(DomainModule, error) bool) {
-			for _, m := range modules {
-				if !yield(m, nil) {
-					return
-				}
-			}
-		}
+		seq := entriesToSeq(entries)
 
 		// XML generation test
 		var xmlBuf bytes.Buffer
@@ -95,16 +70,12 @@ func TestAdversarial_DumperGenericDomain(t *testing.T) {
 		}
 	})
 
-	t.Run("Large sequence (1,000 custom domain items)", func(t *testing.T) {
+	t.Run("Large sequence (1,000 domain items)", func(t *testing.T) {
 		const total = 1000
-		seq := func(yield func(DomainModule, error) bool) {
+		seq := func(yield func(scanner.Entry, error) bool) {
 			for i := range total {
-				mod := DomainModule{
-					Namespace: "pkg",
-					FileName:  fmt.Sprintf("file_%04d.go", i),
-					Code:      fmt.Sprintf("package pkg\n\n// Index %d\nfunc F%d() {}\n", i, i),
-				}
-				if !yield(mod, nil) {
+				code := fmt.Sprintf("package pkg\n\n// Index %d\nfunc F%d() {}\n", i, i)
+				if !yield(entryFor("pkg", fmt.Sprintf("file_%04d.go", i), code), nil) {
 					return
 				}
 			}
@@ -131,10 +102,10 @@ func TestAdversarial_DumperGenericDomain(t *testing.T) {
 
 	t.Run("Sequence with item errors skipped gracefully and logged", func(t *testing.T) {
 		injectedErr := errors.New("upstream generator failure")
-		seqWithErrs := func(yield func(DomainModule, error) bool) {
-			_ = yield(DomainModule{Namespace: "ok", FileName: "ok1.go", Code: "package ok1\n"}, nil)
-			_ = yield(DomainModule{Namespace: "bad", FileName: "bad.go"}, injectedErr)
-			_ = yield(DomainModule{Namespace: "ok", FileName: "ok2.go", Code: "package ok2\n"}, nil)
+		seqWithErrs := func(yield func(scanner.Entry, error) bool) {
+			_ = yield(entryFor("ok", "ok1.go", "package ok1\n"), nil)
+			_ = yield(scanner.Entry{Path: "bad/bad.go", RelPath: "bad/bad.go"}, injectedErr)
+			_ = yield(entryFor("ok", "ok2.go", "package ok2\n"), nil)
 		}
 
 		var xmlBuf bytes.Buffer

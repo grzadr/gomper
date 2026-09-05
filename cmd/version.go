@@ -12,9 +12,9 @@ type buildInfoReader func() (*debug.BuildInfo, bool)
 
 var readBuildInfo buildInfoReader = debug.ReadBuildInfo
 
-func getBuildInfo() (version, commit, date string) {
-	if readBuildInfo != nil {
-		if info, ok := readBuildInfo(); ok && info != nil {
+func getBuildInfo(reader buildInfoReader) (version, commit, date string) {
+	if reader != nil {
+		if info, ok := reader(); ok && info != nil {
 			if v := strings.TrimSpace(info.Main.Version); v != "" && v != "(devel)" {
 				version = v
 			}
@@ -50,21 +50,14 @@ func resolveVersion(ldflagVersion string, reader buildInfoReader) string {
 		return v
 	}
 
-	if reader != nil {
-		origReader := readBuildInfo
-		readBuildInfo = reader
-		version, commit, _ := getBuildInfo()
-		readBuildInfo = origReader
-
-		if version != "" {
-			return version
-		}
-		if commit != "" && commit != "-dirty" {
-			return commit
-		}
+	version, commit, _ := getBuildInfo(reader)
+	if version != "" {
+		return version
+	}
+	if commit != "" && commit != "-dirty" {
+		return commit
 	}
 
 	// 4. Default Fallback
 	return "dev"
 }
-

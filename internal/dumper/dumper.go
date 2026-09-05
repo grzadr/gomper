@@ -25,40 +25,25 @@ var (
 	}
 )
 
-// EntryExtractor extracts a scanner.Entry from a generic item of type T.
-type EntryExtractor[T any] func(T) scanner.Entry
-
-// Dumper generates XML and Markdown context representations of codebases for generic items of type T.
-type Dumper[T any] struct {
-	logger    *slog.Logger
-	extractor EntryExtractor[T]
+// Dumper generates XML and Markdown context representations of codebases.
+type Dumper struct {
+	logger *slog.Logger
 }
 
-// NewDumper creates a new generic Dumper instance.
-func NewDumper[T any](logger *slog.Logger, extractor EntryExtractor[T]) *Dumper[T] {
+// NewDumper creates a new Dumper instance.
+func NewDumper(logger *slog.Logger) *Dumper {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	if extractor == nil {
-		extractor = func(t T) scanner.Entry {
-			if e, ok := any(t).(scanner.Entry); ok {
-				return e
-			}
-			return scanner.Entry{}
-		}
-	}
-	return new(Dumper[T]{
-		logger:    logger,
-		extractor: extractor,
-	})
+	return new(Dumper{logger: logger})
 }
 
-// XMLDumper is maintained as a type alias / specialized wrapper for scanner.Entry for backward compatibility.
-type XMLDumper = Dumper[scanner.Entry]
+// XMLDumper is a type alias for Dumper, kept for naming clarity at call sites.
+type XMLDumper = Dumper
 
-// NewXMLDumper creates a specialized Dumper for scanner.Entry.
+// NewXMLDumper creates a Dumper for scanner.Entry streams.
 func NewXMLDumper(logger *slog.Logger) *XMLDumper {
-	return NewDumper(logger, func(e scanner.Entry) scanner.Entry { return e })
+	return NewDumper(logger)
 }
 
 // FileMetadata holds extracted metadata for a single file.
@@ -164,16 +149,16 @@ func renderTree(node *TreeNode, depth int, sb *strings.Builder) {
 }
 
 // GenerateXML writes the XML document for the provided scanned entries to targetWriter.
-func (d *Dumper[T]) GenerateXML(ctx context.Context, seq iter.Seq2[T, error], instructions string, targetWriter io.Writer) error {
+func (d *Dumper) GenerateXML(ctx context.Context, seq iter.Seq2[scanner.Entry, error], instructions string, targetWriter io.Writer) error {
 	return d.dumpStream(ctx, seq, true, instructions, targetWriter)
 }
 
 // GenerateMarkdown writes a Markdown document representation for scanned entries to targetWriter.
-func (d *Dumper[T]) GenerateMarkdown(ctx context.Context, seq iter.Seq2[T, error], instructions string, targetWriter io.Writer) error {
+func (d *Dumper) GenerateMarkdown(ctx context.Context, seq iter.Seq2[scanner.Entry, error], instructions string, targetWriter io.Writer) error {
 	return d.dumpStream(ctx, seq, false, instructions, targetWriter)
 }
 
-func (d *Dumper[T]) dumpStream(ctx context.Context, seq iter.Seq2[T, error], isXML bool, instructions string, targetWriter io.Writer) error {
+func (d *Dumper) dumpStream(ctx context.Context, seq iter.Seq2[scanner.Entry, error], isXML bool, instructions string, targetWriter io.Writer) error {
 	stagingFile, err := createTempHook("", "gomper-stage-*.tmp")
 	if err != nil {
 		return fmt.Errorf("failed to create staging file: %w", err)
@@ -187,11 +172,10 @@ func (d *Dumper[T]) dumpStream(ctx context.Context, seq iter.Seq2[T, error], isX
 	var treeEntries []scanner.Entry
 	totalTokens := 0
 
-	for item, err := range seq {
+	for entry, err := range seq {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		entry := d.extractor(item)
 		if err != nil {
 			d.logger.ErrorContext(ctx, "dump scan error encountered",
 				slog.String("path", entry.Path),

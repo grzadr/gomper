@@ -176,11 +176,6 @@ func TestGetVersion(t *testing.T) {
 }
 
 func TestGetBuildInfo(t *testing.T) {
-	origReader := readBuildInfo
-	defer func() {
-		readBuildInfo = origReader
-	}()
-
 	tests := []struct {
 		name        string
 		reader      buildInfoReader
@@ -240,8 +235,7 @@ func TestGetBuildInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			readBuildInfo = tt.reader
-			v, c, d := getBuildInfo()
+			v, c, d := getBuildInfo(tt.reader)
 			if v != tt.wantVersion {
 				t.Errorf("getBuildInfo() version = %q, want %q", v, tt.wantVersion)
 			}
@@ -254,4 +248,3 @@ func TestGetBuildInfo(t *testing.T) {
 		})
 	}
 }
-

@@ -325,10 +325,10 @@ func (e *errWriter) Write(p []byte) (int, error) {
 
 func TestNewListFormatter(t *testing.T) {
 	tests := []struct {
-		format    string
-		long      bool
-		wantType  string
-		wantErr   bool
+		format   string
+		long     bool
+		wantType string
+		wantErr  bool
 	}{
 		{"", false, "*app.StandardFormatter", false},
 		{"standard", false, "*app.StandardFormatter", false},

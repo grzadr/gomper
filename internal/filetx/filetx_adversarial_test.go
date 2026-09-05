@@ -14,7 +14,7 @@ import (
 	"github.com/grzadr/gomper/internal/filetx"
 )
 
-func TestAdversarial_WriteAtomicallyWithResult_ErrorAndRollback(t *testing.T) {
+func TestAdversarial_WriteAtomically_ErrorAndRollback(t *testing.T) {
 	t.Run("Error in writeFunc removes tmp file and leaves target untouched", func(t *testing.T) {
 		tempDir := t.TempDir()
 		targetPath := filepath.Join(tempDir, "target_file.txt")
@@ -26,20 +26,14 @@ func TestAdversarial_WriteAtomicallyWithResult_ErrorAndRollback(t *testing.T) {
 		}
 
 		expectedErr := errors.New("deliberate writeFunc catastrophic failure")
-		type ResultMeta struct {
-			Records int
-		}
 
-		res, err := filetx.WriteAtomicallyWithResult(context.Background(), targetPath, func(ctx context.Context, w io.Writer) (ResultMeta, error) {
+		err := filetx.WriteAtomically(context.Background(), targetPath, func(ctx context.Context, w io.Writer) error {
 			_, _ = w.Write([]byte("corrupted partial payload"))
-			return ResultMeta{Records: -1}, expectedErr
+			return expectedErr
 		})
 
 		if !errors.Is(err, expectedErr) {
 			t.Errorf("expected error %v, got %v", expectedErr, err)
-		}
-		if res.Records != -1 {
-			t.Errorf("expected zero/error result, got %+v", res)
 		}
 
 		// Verify existing target file content was preserved
@@ -76,17 +70,12 @@ func TestAdversarial_WriteAtomicallyWithResult_ErrorAndRollback(t *testing.T) {
 				filePath := filepath.Join(tempDir, fmt.Sprintf("concurrent_%02d.txt", idx))
 				expectedContent := fmt.Sprintf("content of writer %d", idx)
 
-				tx := filetx.NewTx(filePath, func(ctx context.Context, w io.Writer) (int, error) {
-					return w.Write([]byte(expectedContent))
+				err := filetx.WriteAtomically(context.Background(), filePath, func(ctx context.Context, w io.Writer) error {
+					_, err := w.Write([]byte(expectedContent))
+					return err
 				})
-
-				n, err := tx.Execute(context.Background())
 				if err != nil {
 					errChan <- fmt.Errorf("writer %d failed: %w", idx, err)
-					return
-				}
-				if n != len(expectedContent) {
-					errChan <- fmt.Errorf("writer %d wrote %d bytes, want %d", idx, n, len(expectedContent))
 					return
 				}
 
@@ -125,10 +114,10 @@ func TestAdversarial_WriteAtomicallyWithResult_ErrorAndRollback(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		_, err := filetx.WriteAtomicallyWithResult(ctx, targetPath, func(ctx context.Context, w io.Writer) (string, error) {
+		err := filetx.WriteAtomically(ctx, targetPath, func(ctx context.Context, w io.Writer) error {
 			_, _ = w.Write([]byte("some data"))
 			cancel() // cancel mid-write
-			return "done", nil
+			return nil
 		})
 
 		if err == nil || !errors.Is(err, context.Canceled) {
