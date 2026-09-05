@@ -29,3 +29,13 @@
 - Simplicity first. Minimum code that solves the problem. Nothing speculative.
 - Surgical changes. Touch only what you must. Clean up only your own mess.
 - Goal-driven execution. Define success criteria. Loop until verified.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues (grzadr/gomper), via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context layout (root `CONTEXT.md` + `docs/adr/`, created lazily as concepts get resolved). See `docs/agents/domain.md`.
