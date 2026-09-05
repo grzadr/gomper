@@ -100,7 +100,6 @@ func TestWalkPaths_EdgeCases(t *testing.T) {
 		}
 	})
 
-
 	t.Run("Non-existent root path yields false breaks early", func(t *testing.T) {
 		ctx := context.Background()
 		nonExistent := "/nonexistent/path/for/test"
@@ -262,7 +261,7 @@ func TestWalkPaths_Basic(t *testing.T) {
 
 	t.Run("Short-circuits on loop break", func(t *testing.T) {
 		tempDir := t.TempDir()
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			f := filepath.Join(tempDir, string(rune('a'+i))+".txt")
 			_ = os.WriteFile(f, []byte("test"), 0644)
 		}
@@ -286,7 +285,7 @@ func TestWalkPaths_Basic(t *testing.T) {
 
 	t.Run("Stops on context cancellation", func(t *testing.T) {
 		tempDir := t.TempDir()
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			f := filepath.Join(tempDir, string(rune('a'+i))+".txt")
 			_ = os.WriteFile(f, []byte("test"), 0644)
 		}
@@ -746,7 +745,42 @@ func TestWalkPaths_Metrics(t *testing.T) {
 	})
 }
 
+func TestScanner_NewScannerAndWalk(t *testing.T) {
+	tempDir := t.TempDir()
+	file1 := filepath.Join(tempDir, "a.txt")
+	_ = os.WriteFile(file1, []byte("hello"), 0644)
 
+	t.Run("NewScanner with nil filter and Walk", func(t *testing.T) {
+		s := scanner.NewScanner(nil)
+		ctx := context.Background()
+		var count int
+		for entry, err := range s.Walk(ctx, []string{tempDir}) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected 1 file, got %d", count)
+		}
+	})
 
-
-
+	t.Run("nil *Scanner receiver Walk behaves safely", func(t *testing.T) {
+		var s *scanner.Scanner
+		ctx := context.Background()
+		var count int
+		for entry, err := range s.Walk(ctx, []string{tempDir}) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !entry.IsDir {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected 1 file, got %d", count)
+		}
+	})
+}

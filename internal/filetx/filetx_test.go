@@ -178,5 +178,16 @@ func TestWriteAtomically(t *testing.T) {
 			t.Errorf("expected 'permission test data', got %q", string(content))
 		}
 	})
-}
 
+	t.Run("Succeeds when writeFunc is nil", func(t *testing.T) {
+		tempDir := t.TempDir()
+		targetPath := filepath.Join(tempDir, "empty.txt")
+		err := filetx.WriteAtomically(context.Background(), targetPath, nil)
+		if err != nil {
+			t.Fatalf("unexpected error with nil writeFunc: %v", err)
+		}
+		if _, err := os.Stat(targetPath); err != nil {
+			t.Fatalf("expected target file to exist, got: %v", err)
+		}
+	})
+}

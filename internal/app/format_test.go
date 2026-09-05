@@ -14,9 +14,12 @@ func TestOutputFormat_IsValid(t *testing.T) {
 	}{
 		{"Markdown lower", app.FormatMarkdown, true},
 		{"XML lower", app.FormatXML, true},
+		{"JSON lower", app.FormatJSON, true},
 		{"Markdown uppercase", app.OutputFormat("MARKDOWN"), true},
 		{"XML mixed case", app.OutputFormat("Xml"), true},
-		{"Invalid format", app.OutputFormat("json"), false},
+		{"JSON uppercase", app.OutputFormat("JSON"), true},
+		{"JSON mixed case", app.OutputFormat("Json"), true},
+		{"Invalid format yaml", app.OutputFormat("yaml"), false},
 		{"Empty format", app.OutputFormat(""), false},
 	}
 
@@ -37,8 +40,10 @@ func TestParseOutputFormat(t *testing.T) {
 	}{
 		{"markdown", app.FormatMarkdown, false},
 		{"xml", app.FormatXML, false},
+		{"json", app.FormatJSON, false},
 		{" MARKDOWN ", app.FormatMarkdown, false},
 		{"Xml", app.FormatXML, false},
+		{" JSON ", app.FormatJSON, false},
 		{"yaml", "", true},
 		{"", "", true},
 	}
@@ -65,6 +70,13 @@ func TestOutputFormat_SetAndUnmarshal(t *testing.T) {
 		t.Errorf("expected format XML, got %v", f)
 	}
 
+	if err := f.Set("json"); err != nil {
+		t.Fatalf("unexpected error setting valid json format: %v", err)
+	}
+	if f != app.FormatJSON {
+		t.Errorf("expected format JSON, got %v", f)
+	}
+
 	if err := f.Set("invalid"); err == nil {
 		t.Errorf("expected error setting invalid format, got nil")
 	}
@@ -75,6 +87,14 @@ func TestOutputFormat_SetAndUnmarshal(t *testing.T) {
 	}
 	if f2 != app.FormatMarkdown {
 		t.Errorf("expected format Markdown, got %v", f2)
+	}
+
+	var f3 app.OutputFormat
+	if err := f3.UnmarshalText([]byte("json")); err != nil {
+		t.Fatalf("unexpected error unmarshaling text: %v", err)
+	}
+	if f3 != app.FormatJSON {
+		t.Errorf("expected format JSON, got %v", f3)
 	}
 
 	if f2.Type() != "format" {

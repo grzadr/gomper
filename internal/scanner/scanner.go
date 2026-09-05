@@ -15,17 +15,17 @@ import (
 
 // Entry encapsulates metadata and fs.FileInfo for a scanned file or directory.
 type Entry struct {
-	Path      string
-	RelPath   string
-	Root      string
-	Info      fs.FileInfo
-	IsDir     bool
-	Content   io.ReadCloser
-	Extension string
-	Language  string
-	Size      int64
-	Lines     int
-	Tokens    int
+	Path      string        `json:"path,omitzero"`
+	RelPath   string        `json:"rel_path,omitzero"`
+	Root      string        `json:"root,omitzero"`
+	Info      fs.FileInfo   `json:"-"`
+	IsDir     bool          `json:"is_dir,omitzero"`
+	Content   io.ReadCloser `json:"-"`
+	Extension string        `json:"extension,omitzero"`
+	Language  string        `json:"language,omitzero"`
+	Size      int64         `json:"size,omitzero"`
+	Lines     int           `json:"lines,omitzero"`
+	Tokens    int           `json:"tokens,omitzero"`
 }
 
 // FileResult is an alias for Entry representing a scanned file result.
@@ -97,12 +97,12 @@ func NewFilter(opts FilterOptions) (*Filter, error) {
 	if len(regexes) == 0 && len(dirRegexes) == 0 && len(nameRegexes) == 0 && !opts.IgnoreDotfiles {
 		return nil, nil
 	}
-	return &Filter{
+	return new(Filter{
 		nameRegexes:    nameRegexes,
 		regexes:        regexes,
 		dirRegexes:     dirRegexes,
 		ignoreDotfiles: opts.IgnoreDotfiles,
-	}, nil
+	}), nil
 }
 
 // ShouldIgnore checks if an entry should be ignored following the strict evaluation order:
@@ -118,11 +118,11 @@ func (f *Filter) ShouldIgnore(name string, relPath string, isDir ...bool) bool {
 	if len(isDir) > 0 {
 		isDirectory = isDir[0]
 	}
-	slashRel := filepath.ToSlash(relPath)
+	relPathSlash := filepath.ToSlash(relPath)
 
 	// Step 1: Evaluate ignore dot files flag
 	if f.ignoreDotfiles {
-		baseName := filepath.Base(slashRel)
+		baseName := filepath.Base(relPathSlash)
 		if strings.HasPrefix(name, ".") || strings.HasPrefix(baseName, ".") {
 			return true
 		}
@@ -133,7 +133,7 @@ func (f *Filter) ShouldIgnore(name string, relPath string, isDir ...bool) bool {
 		if match, _ := re.MatchString(name); match {
 			return true
 		}
-		if match, _ := re.MatchString(slashRel); match {
+		if match, _ := re.MatchString(relPathSlash); match {
 			return true
 		}
 	}
@@ -158,14 +158,13 @@ func (f *Filter) ShouldIgnore(name string, relPath string, isDir ...bool) bool {
 		if match, _ := re.MatchString(name); match {
 			return true
 		}
-		if match, _ := re.MatchString(slashRel); match {
+		if match, _ := re.MatchString(relPathSlash); match {
 			return true
 		}
 	}
 
 	return false
 }
-
 
 // ScanOptions configures options for directory and file traversal.
 type ScanOptions struct {
@@ -196,15 +195,33 @@ var (
 	countLinesAndTokensFunc = CountLinesAndTokens
 )
 
-// WalkPaths returns an iter.Seq2[Entry, error] iterator (Go range-over-function)
-// that traverses all files and directories specified by paths, filtering out entries
-// that match any active ignore patterns in filter.
-func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...ScanOption) iter.Seq2[Entry, error] {
+// Scanner coordinates filesystem traversal and filtering.
+type Scanner struct {
+	filter  *Filter
+	options ScanOptions
+}
+
+// NewScanner creates a configured Scanner instance.
+func NewScanner(filter *Filter, opts ...ScanOption) *Scanner {
 	var scanOpts ScanOptions
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&scanOpts)
 		}
+	}
+	return new(Scanner{
+		filter:  filter,
+		options: scanOpts,
+	})
+}
+
+// Walk traverses the given paths and yields Entry items.
+func (s *Scanner) Walk(ctx context.Context, paths []string) iter.Seq2[Entry, error] {
+	var filter *Filter
+	var scanOpts ScanOptions
+	if s != nil {
+		filter = s.filter
+		scanOpts = s.options
 	}
 
 	return func(yield func(Entry, error) bool) {
@@ -411,3 +428,9 @@ func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...Scan
 	}
 }
 
+// WalkPaths returns an iter.Seq2[Entry, error] iterator (Go range-over-function)
+// that traverses all files and directories specified by paths, filtering out entries
+// that match any active ignore patterns in filter.
+func WalkPaths(ctx context.Context, paths []string, filter *Filter, opts ...ScanOption) iter.Seq2[Entry, error] {
+	return NewScanner(filter, opts...).Walk(ctx, paths)
+}

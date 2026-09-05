@@ -78,7 +78,7 @@ func GitignoreToRegex(line string) string {
 	line = strings.TrimSuffix(line, "/")
 
 	var sb strings.Builder
-	for i := 0; i < len(line); i++ {
+	for i := range len(line) {
 		ch := line[i]
 		switch ch {
 		case '*':

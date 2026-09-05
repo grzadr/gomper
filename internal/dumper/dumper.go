@@ -25,25 +25,33 @@ var (
 	}
 )
 
-// XMLDumper generates XML and Markdown context representations of codebases.
-type XMLDumper struct {
+// Dumper generates XML and Markdown context representations of codebases.
+type Dumper struct {
 	logger *slog.Logger
 }
 
-// NewXMLDumper creates a new dumper instance.
-func NewXMLDumper(logger *slog.Logger) *XMLDumper {
+// NewDumper creates a new Dumper instance.
+func NewDumper(logger *slog.Logger) *Dumper {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &XMLDumper{logger: logger}
+	return new(Dumper{logger: logger})
+}
+
+// XMLDumper is a type alias for Dumper, kept for naming clarity at call sites.
+type XMLDumper = Dumper
+
+// NewXMLDumper creates a Dumper for scanner.Entry streams.
+func NewXMLDumper(logger *slog.Logger) *XMLDumper {
+	return NewDumper(logger)
 }
 
 // FileMetadata holds extracted metadata for a single file.
 type FileMetadata struct {
-	Path    string
-	RelPath string
-	Lang    string
-	Tokens  int
+	Path    string `json:"path,omitzero"`
+	RelPath string `json:"rel_path,omitzero"`
+	Lang    string `json:"lang,omitzero"`
+	Tokens  int    `json:"tokens,omitzero"`
 }
 
 // EstimateTokens calculates an approximate token count from file byte size (~4 chars per token).
@@ -77,14 +85,14 @@ func FormatLineNumberedContent(r io.Reader, w io.Writer, escapeXML bool) error {
 
 // TreeNode represents a node in the directory structure hierarchy.
 type TreeNode struct {
-	Name     string
-	IsDir    bool
-	Children map[string]*TreeNode
+	Name     string               `json:"name,omitzero"`
+	IsDir    bool                 `json:"is_dir,omitzero"`
+	Children map[string]*TreeNode `json:"children,omitzero"`
 }
 
 // BuildDirectoryTree generates an indented string representation of scanned entries.
 func BuildDirectoryTree(entries []scanner.Entry) string {
-	root := &TreeNode{Children: make(map[string]*TreeNode)}
+	root := new(TreeNode{Children: make(map[string]*TreeNode)})
 
 	for _, entry := range entries {
 		rel := filepath.ToSlash(entry.RelPath)
@@ -103,11 +111,11 @@ func BuildDirectoryTree(entries []scanner.Entry) string {
 
 			child, exists := curr.Children[part]
 			if !exists {
-				child = &TreeNode{
+				child = new(TreeNode{
 					Name:     part,
 					IsDir:    isDir,
 					Children: make(map[string]*TreeNode),
-				}
+				})
 				curr.Children[part] = child
 			} else if isDir {
 				child.IsDir = true
@@ -141,16 +149,16 @@ func renderTree(node *TreeNode, depth int, sb *strings.Builder) {
 }
 
 // GenerateXML writes the XML document for the provided scanned entries to targetWriter.
-func (d *XMLDumper) GenerateXML(ctx context.Context, seq iter.Seq2[scanner.Entry, error], instructions string, targetWriter io.Writer) error {
+func (d *Dumper) GenerateXML(ctx context.Context, seq iter.Seq2[scanner.Entry, error], instructions string, targetWriter io.Writer) error {
 	return d.dumpStream(ctx, seq, true, instructions, targetWriter)
 }
 
 // GenerateMarkdown writes a Markdown document representation for scanned entries to targetWriter.
-func (d *XMLDumper) GenerateMarkdown(ctx context.Context, seq iter.Seq2[scanner.Entry, error], instructions string, targetWriter io.Writer) error {
+func (d *Dumper) GenerateMarkdown(ctx context.Context, seq iter.Seq2[scanner.Entry, error], instructions string, targetWriter io.Writer) error {
 	return d.dumpStream(ctx, seq, false, instructions, targetWriter)
 }
 
-func (d *XMLDumper) dumpStream(ctx context.Context, seq iter.Seq2[scanner.Entry, error], isXML bool, instructions string, targetWriter io.Writer) error {
+func (d *Dumper) dumpStream(ctx context.Context, seq iter.Seq2[scanner.Entry, error], isXML bool, instructions string, targetWriter io.Writer) error {
 	stagingFile, err := createTempHook("", "gomper-stage-*.tmp")
 	if err != nil {
 		return fmt.Errorf("failed to create staging file: %w", err)

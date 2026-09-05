@@ -50,6 +50,24 @@ func TestLookupLanguage(t *testing.T) {
 			expectedKnown: true,
 		},
 		{
+			name:         "Known Bicep extension",
+			path:         "infra/main.bicep",
+			expectedLang: "bicep",
+			expectedKnown: true,
+		},
+		{
+			name:         "Known Bicep parameters extension",
+			path:         "infra/main.bicepparam",
+			expectedLang: "bicep",
+			expectedKnown: true,
+		},
+		{
+			name:         "Bicep file with auxiliary extension",
+			path:         "infra/main.bicep.example",
+			expectedLang: "bicep",
+			expectedKnown: true,
+		},
+		{
 			name:         "Known special filename Makefile",
 			path:         "Makefile",
 			expectedLang: "makefile",

@@ -48,8 +48,10 @@ func WriteAtomically(ctx context.Context, targetPath string, writeFunc func(ctx 
 		}
 	}()
 
-	if err = writeFunc(ctx, tmpFile); err != nil {
-		return err
+	if writeFunc != nil {
+		if err = writeFunc(ctx, tmpFile); err != nil {
+			return err
+		}
 	}
 
 	if err = ctx.Err(); err != nil {

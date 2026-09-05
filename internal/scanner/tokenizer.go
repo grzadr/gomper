@@ -15,7 +15,7 @@ type WhitespaceTokenizer struct{}
 
 // NewWhitespaceTokenizer creates a new WhitespaceTokenizer instance.
 func NewWhitespaceTokenizer() *WhitespaceTokenizer {
-	return &WhitespaceTokenizer{}
+	return new(WhitespaceTokenizer{})
 }
 
 // CountTokens counts whitespace-delimited tokens in the provided reader.
@@ -30,7 +30,7 @@ func (t *WhitespaceTokenizer) CountTokens(r io.Reader) (int, error) {
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
-			for i := 0; i < n; i++ {
+			for i := range n {
 				b := buf[i]
 				isSpace := b == ' ' || b == '\t' || b == '\n' || b == '\r' || b == '\v' || b == '\f'
 				if !isSpace {

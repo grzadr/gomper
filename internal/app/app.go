@@ -47,7 +47,7 @@ type Service struct {
 }
 
 func NewService(app *setup.App) *Service {
-	return &Service{app: app}
+	return new(Service{app: app})
 }
 
 func buildCombinedPatterns(profiles []string, userPatterns []string) ([]string, error) {
@@ -158,7 +158,7 @@ func (s *Service) Dump(ctx context.Context, out io.Writer, paths []string, opts 
 	}
 
 	writeFunc := func(ctx context.Context, w io.Writer) error {
-		d := dumper.NewXMLDumper(logger)
+		d := dumper.NewDumper(logger)
 		seq := walkPathsFunc(ctx, paths, filter)
 		switch opts.Format {
 		case FormatXML:

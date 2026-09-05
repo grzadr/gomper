@@ -21,7 +21,7 @@ func TestListProfiles(t *testing.T) {
 		profileMap[p] = true
 	}
 
-	expectedProfiles := []string{"generic", "go", "node", "python", "java", "cpp", "rust", "terraform"}
+	expectedProfiles := []string{"azure", "generic", "go", "node", "python", "java", "cpp", "rust", "terraform"}
 	for _, expected := range expectedProfiles {
 		if !profileMap[expected] {
 			t.Errorf("expected embedded profile %q, but not found in %v", expected, profiles)
@@ -82,6 +82,54 @@ func TestLoadProfilePatterns_Terraform(t *testing.T) {
 
 	if filter.ShouldIgnore("variables.tf", "variables.tf") {
 		t.Errorf("expected 'terraform' profile NOT to ignore variables.tf")
+	}
+}
+
+func TestLoadProfilePatterns_Azure(t *testing.T) {
+	patterns, err := scanner.LoadProfilePatterns("azure")
+	if err != nil {
+		t.Fatalf("unexpected error loading 'azure' profile: %v", err)
+	}
+
+	if len(patterns) == 0 {
+		t.Errorf("expected patterns for 'azure' profile, got empty")
+	}
+
+	filter, err := scanner.NewFilter(scanner.FilterOptions{IgnorePatterns: patterns})
+	if err != nil {
+		t.Fatalf("failed to create filter from loaded patterns: %v", err)
+	}
+
+	if !filter.ShouldIgnore(".azure", ".azure") {
+		t.Errorf("expected 'azure' profile to ignore .azure directory")
+	}
+
+	if !filter.ShouldIgnore("local.settings.json", "local.settings.json") {
+		t.Errorf("expected 'azure' profile to ignore local.settings.json")
+	}
+
+	if !filter.ShouldIgnore(".bicep", ".bicep") {
+		t.Errorf("expected 'azure' profile to ignore .bicep directory")
+	}
+
+	if !filter.ShouldIgnore("infra.lock.json", "infra.lock.json") {
+		t.Errorf("expected 'azure' profile to ignore *.lock.json files")
+	}
+
+	if !filter.ShouldIgnore("dev.local.bicepparam", "dev.local.bicepparam") {
+		t.Errorf("expected 'azure' profile to ignore *.local.bicepparam files")
+	}
+
+	if !filter.ShouldIgnore("prod.secrets.bicepparam", "prod.secrets.bicepparam") {
+		t.Errorf("expected 'azure' profile to ignore *.secrets.bicepparam files")
+	}
+
+	if filter.ShouldIgnore("main.bicep", "main.bicep") {
+		t.Errorf("expected 'azure' profile NOT to ignore main.bicep")
+	}
+
+	if filter.ShouldIgnore("main.bicepparam", "main.bicepparam") {
+		t.Errorf("expected 'azure' profile NOT to ignore main.bicepparam")
 	}
 }
 

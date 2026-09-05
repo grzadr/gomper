@@ -101,7 +101,7 @@ func TestService_List_FormatterErrors(t *testing.T) {
 	t.Run("WriteHeader error", func(t *testing.T) {
 		expectedErr := errors.New("write header failure")
 		opts := ListOptions{
-			Formatter: &failingFormatter{writeHeaderErr: expectedErr},
+			Formatter: new(failingFormatter{writeHeaderErr: expectedErr}),
 		}
 
 		err := svc.List(context.Background(), new(bytes.Buffer), []string{"."}, opts)
@@ -113,7 +113,7 @@ func TestService_List_FormatterErrors(t *testing.T) {
 	t.Run("FormatEntry error", func(t *testing.T) {
 		expectedErr := errors.New("format entry failure")
 		opts := ListOptions{
-			Formatter: &failingFormatter{formatEntryErr: expectedErr},
+			Formatter: new(failingFormatter{formatEntryErr: expectedErr}),
 		}
 
 		err := svc.List(context.Background(), new(bytes.Buffer), []string{"."}, opts)
@@ -125,7 +125,7 @@ func TestService_List_FormatterErrors(t *testing.T) {
 	t.Run("Flush error", func(t *testing.T) {
 		expectedErr := errors.New("flush failure")
 		opts := ListOptions{
-			Formatter: &failingFormatter{flushErr: expectedErr},
+			Formatter: new(failingFormatter{flushErr: expectedErr}),
 		}
 
 		err := svc.List(context.Background(), new(bytes.Buffer), []string{"."}, opts)

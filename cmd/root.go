@@ -19,13 +19,13 @@ func NewRootCommand(appInst *setup.App) *cobra.Command {
 	}
 
 	v := viper.New()
-	cfg := &config.Config{
+	cfg := new(config.Config{
 		LogLevel: "info",
 		Format:   app.FormatMarkdown,
-	}
+	})
 	service := app.NewService(appInst)
 
-	rootCmd := &cobra.Command{
+	rootCmd := new(cobra.Command{
 		Use:           "gomper",
 		Short:         "Dump directory structure into Markdown or XML files",
 		Version:       getVersion(),
@@ -38,7 +38,7 @@ func NewRootCommand(appInst *setup.App) *cobra.Command {
 			appInst.SetLogLevel(setup.ParseLogLevel(cfg.LogLevel))
 			return nil
 		},
-	}
+	})
 
 	rootCmd.PersistentFlags().StringVar(&cfg.ConfigFile, "config", "", "path to custom configuration file")
 	rootCmd.PersistentFlags().StringVar(&cfg.LogLevel, "log-level", "info", "logging level (debug, info, warn, error)")

@@ -76,7 +76,7 @@ func TestWhitespaceTokenizer_CountTokens(t *testing.T) {
 
 	t.Run("Reader error propagation", func(t *testing.T) {
 		expectedErr := errors.New("read failure")
-		_, err := tokenizer.CountTokens(&errorReader{err: expectedErr})
+		_, err := tokenizer.CountTokens(new(errorReader{err: expectedErr}))
 		if !errors.Is(err, expectedErr) {
 			t.Errorf("expected error %v, got %v", expectedErr, err)
 		}
@@ -95,5 +95,20 @@ func TestDefaultTokenizer(t *testing.T) {
 	}
 	if count != 3 {
 		t.Errorf("expected 3 tokens, got %d", count)
+	}
+}
+
+func BenchmarkWhitespaceTokenizer_CountTokens(b *testing.B) {
+	tokenizer := scanner.NewWhitespaceTokenizer()
+	input := strings.Repeat("word1 word2 word3\n", 1000)
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(input)))
+
+	for b.Loop() {
+		r := strings.NewReader(input)
+		if _, err := tokenizer.CountTokens(r); err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
 	}
 }

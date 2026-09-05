@@ -2,6 +2,7 @@ version: "2"
 
 run:
   relative-path-mode: cfg
+  go: "1.27"
 
 formatters:
   enable:
@@ -13,7 +14,7 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/grzadr/godlv)
+        - prefix(github.com/grzadr/gomper)
       custom-order: true
     golines:
       max-len: 100
@@ -45,7 +46,6 @@ linters:
     - forbidigo
     - funcorder
     - funlen
-    - gci
     - gocheckcompilerdirectives
     - gochecknoglobals
     - gochecknoinits
@@ -56,8 +56,6 @@ linters:
     - gocyclo
     - godoclint
     - godot
-    - gofumpt
-    - golines
     - gomoddirectives
     - goprintffuncname
     - gosec
@@ -107,7 +105,7 @@ linters:
     - wastedassign
     - whitespace
 
-settings:
+  settings:
     recvcheck:
       disable-builtin: true
       exclusions:
@@ -261,7 +259,7 @@ settings:
       os-temp-dir: true
       context-background: true
 
-exclusions:
+  exclusions:
     warn-unused: true
     presets:
       - std-error-handling

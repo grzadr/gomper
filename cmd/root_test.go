@@ -171,8 +171,8 @@ func TestCLI_ListCommand(t *testing.T) {
 		if !strings.Contains(output, "test.txt") || !strings.Contains(output, "sub.txt") {
 			t.Errorf("expected output to contain test.txt and sub.txt, got: %q", output)
 		}
-		lines := strings.Split(strings.TrimSpace(output), "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(strings.TrimSpace(output), "\n")
+		for line := range lines {
 			if line == "subfolder" || line == "subfolder/" {
 				t.Errorf("expected directory 'subfolder' to be excluded from list output, got line: %q in output: %q", line, output)
 			}
@@ -463,7 +463,6 @@ func TestCLI_ListCommand(t *testing.T) {
 	})
 }
 
-
 func TestCLI_ProfilesCommand(t *testing.T) {
 	rootCmd := cmd.NewRootCommand(nil)
 	outBuf := new(bytes.Buffer)
@@ -511,6 +510,24 @@ func TestCLI_FormatsCommand(t *testing.T) {
 	}
 }
 
+func TestCLI_FormatsCommand_JSON(t *testing.T) {
+	rootCmd := cmd.NewRootCommand(nil)
+	outBuf := new(bytes.Buffer)
+	errBuf := new(bytes.Buffer)
+	rootCmd.SetOut(outBuf)
+	rootCmd.SetErr(errBuf)
+
+	rootCmd.SetArgs([]string{"formats", "--json"})
+	err := rootCmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error running formats --json: %v", err)
+	}
+
+	output := outBuf.String()
+	if !strings.Contains(output, `"supported_formats"`) || !strings.Contains(output, `"special_filenames"`) {
+		t.Errorf("expected JSON output containing supported_formats and special_filenames, got: %s", output)
+	}
+}
 
 func TestCLI_DumpCommand(t *testing.T) {
 	t.Run("Requires at least one path argument or config path", func(t *testing.T) {
@@ -793,6 +810,3 @@ func TestCLI_VersionFlag(t *testing.T) {
 		}
 	})
 }
-
-
-

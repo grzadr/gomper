@@ -17,7 +17,7 @@ func NewListCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 	var localNameFilter []string
 	var localProfiles []string
 
-	cmd := &cobra.Command{
+	cmd := new(cobra.Command{
 		Use:   "list [path...]",
 		Short: "List files in the specified directories",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -54,7 +54,7 @@ func NewListCommand(cfg *config.Config, service app.Dumper) *cobra.Command {
 			}
 			return service.List(cmd.Context(), cmd.OutOrStdout(), targetPaths, opts)
 		},
-	}
+	})
 
 	cmd.Flags().BoolVarP(&longFormat, "long", "l", false, "display detailed file attributes (size, permissions)")
 	cmd.Flags().StringVar(&formatFlag, "format", "standard", "output format for listing files (standard, detailed)")

@@ -473,7 +473,7 @@ func TestDumper_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("Returns error when writer fails in FormatLineNumberedContent", func(t *testing.T) {
-		err := dumper.FormatLineNumberedContent(strings.NewReader("line1\n"), &failWriter{failOnWrite: true}, false)
+		err := dumper.FormatLineNumberedContent(strings.NewReader("line1\n"), new(failWriter{failOnWrite: true}), false)
 		if err == nil {
 			t.Errorf("expected write error from FormatLineNumberedContent, got nil")
 		}

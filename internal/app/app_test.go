@@ -201,7 +201,6 @@ func TestService_List(t *testing.T) {
 	})
 }
 
-
 func TestService_Dump(t *testing.T) {
 	appInst := setup.NewApp(slog.LevelDebug)
 	svc := app.NewService(appInst)
@@ -341,7 +340,6 @@ func TestService_Dump(t *testing.T) {
 		}
 	})
 }
-
 
 func TestOutputFormat_String(t *testing.T) {
 	if app.FormatMarkdown.String() != "markdown" {

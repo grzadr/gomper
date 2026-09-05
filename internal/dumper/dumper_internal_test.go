@@ -122,7 +122,7 @@ func TestDumper_InternalHooks(t *testing.T) {
 			{Path: "test.go", RelPath: "test.go", IsDir: false, Content: io.NopCloser(strings.NewReader("content"))},
 		}
 
-		failW := &failWriter{failOnWrite: true}
+		failW := new(failWriter{failOnWrite: true})
 		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", failW)
 		if err == nil {
 			t.Errorf("expected write error when targetWriter fails, got nil")
@@ -135,7 +135,7 @@ func TestDumper_InternalHooks(t *testing.T) {
 			{Path: "test.go", RelPath: "test.go", IsDir: false, Content: io.NopCloser(strings.NewReader("content"))},
 		}
 
-		failAfterHeaderW := &failAfterFirstWriter{}
+		failAfterHeaderW := new(failAfterFirstWriter{})
 		err := d.GenerateXML(context.Background(), entriesToSeq(entries), "", failAfterHeaderW)
 		if err == nil || !strings.Contains(err.Error(), "failed to copy staging file content") {
 			t.Errorf("expected copy error from GenerateXML, got: %v", err)

@@ -1,4 +1,4 @@
-.PHONY: all test test-verbose test-coverage check-coverage coverage-html lint build clean run
+.PHONY: all test test-verbose test-coverage check-coverage coverage-html lint fmt build test-ci clean run
 
 # Binary name and output directory
 BINARY_NAME=gomper
@@ -10,11 +10,11 @@ MIN_COVERAGE=95.0
 # Default target
 all: build
 
-# Build the binary (depends on clean, lint, test-coverage, and check-coverage passing)
-build: clean lint check-coverage
+# Build the binary with VCS metadata stamped automatically
+build:
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BIN_DIR)
-	go build -o $(BIN_DIR)/$(BINARY_NAME) main.go
+	go build -json -buildvcs=true -o $(BIN_DIR)/$(BINARY_NAME) .
 	@echo "Binary created at $(BIN_DIR)/$(BINARY_NAME)"
 
 # Run tests
@@ -34,6 +34,12 @@ test-coverage: test
 	go test -coverprofile=$(COVERAGE_FILE) ./...
 	go tool cover -func=$(COVERAGE_FILE)
 
+# Structured CI test target with JSON telemetry and race detector
+test-ci:
+	@echo "Running CI test suite with structured telemetry..."
+	@mkdir -p $(COVERAGE_DIR)
+	go test -json -race -coverprofile=$(COVERAGE_FILE) ./...
+
 # Check that test coverage meets minimum threshold
 check-coverage: test-coverage
 	@echo "Verifying test coverage is at least $(MIN_COVERAGE)%..."
@@ -52,15 +58,14 @@ coverage-html: test-coverage
 	@echo "Generating HTML coverage report..."
 	go tool cover -html=$(COVERAGE_FILE)
 
-# Run linter (golangci-lint if available, fallback to go vet)
+# Run linter via go tool
 lint:
-	@echo "Running linter..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run ./...; \
-	else \
-		echo "golangci-lint not found, running go vet..."; \
-		go vet ./...; \
-	fi
+	go tool golangci-lint run --config golangci.yaml
+
+# Format code and run linter autofixes
+fmt:
+	go fmt ./...
+	go tool golangci-lint run --fix
 
 # Clean build artifacts
 clean:
@@ -68,5 +73,6 @@ clean:
 	@rm -rf $(BIN_DIR) $(COVERAGE_DIR)
 
 # Run application
-run:
-	go run main.go
+run: build
+	./$(BIN_DIR)/$(BINARY_NAME)
+

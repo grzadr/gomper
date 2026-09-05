@@ -12,7 +12,7 @@ var listProfilesFunc = scanner.ListProfiles
 
 // NewProfilesCommand creates the profiles subcommand to list available embedded ignore profiles.
 func NewProfilesCommand() *cobra.Command {
-	return &cobra.Command{
+	return new(cobra.Command{
 		Use:   "profiles",
 		Short: "List available embedded gitignore profiles",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -28,5 +28,5 @@ func NewProfilesCommand() *cobra.Command {
 			}
 			return nil
 		},
-	}
+	})
 }

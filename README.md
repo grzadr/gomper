@@ -14,7 +14,7 @@ Built with **Go 1.26 range-over-function iterators (`iter.Seq2`)**, Cobra, and V
 
 - **Range-Over-Function Iteration**: Memory-efficient directory traversal using Go 1.26 native `iter.Seq2[Entry, error]` iterators.
 - **Implicit Binary File Exclusion**: Automatically detects and ignores binary files across all operations (`list` and `dump`) using bounded 8KB content sniffing (Git NUL-byte and UTF-8 sequence heuristics) without requiring flags or configuration.
-- **Embedded Gitignore Profiles**: Preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`, `terraform`) embedded into the binary with `//go:embed`.
+- **Embedded Gitignore Profiles**: Preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`, `terraform`, `azure`) embedded into the binary with `//go:embed`.
 - **File Name & Regex Filtering**: Filter files matching custom regular expressions against their whole base file name (`-n` / `--name`), exclude files/directories with custom ignore rules (`-i` / `--ignore`), ignore directories (`-D` / `--ignore-dir`), or hide dotfiles (`-d` / `--ignore-dotfiles`). Filtering is strictly evaluated in 4 steps: 1. ignore dotfiles, 2. ignore directories, 3. name filter, 4. ignore patterns.
 - **Atomic File Output**: Transactional file writing via `internal/filetx` using temporary files, fsync, and parent directory sync to prevent partial writes.
 - **Token Estimation & Line Numbering**: Automatic token estimation (~4 chars per token) and line numbering (`1 | content...`) tailored for LLM context consumption.
@@ -130,9 +130,10 @@ SIZE         LINES   TOKENS  EXTENSION   LANGUAGE    FILE
   > 3. **Name filter** (`-n` / `--name`)
   > 4. **Ignore flag & profiles** (`-i` / `--ignore` / `--profile`)
 
-- **Language & Generic Ignore Profiles** (`-p`, `--profile`): Apply preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`, `terraform`). The `generic` profile automatically excludes environment files (`.env`, `.env.*`), OS metadata (`.DS_Store`, `Thumbs.db`), IDE configs (`.vscode/`, `.idea/`), and VCS metadata (`.git/`).
+- **Language & Generic Ignore Profiles** (`-p`, `--profile`): Apply preset ignore templates (`generic`, `go`, `node`, `python`, `java`, `cpp`, `rust`, `terraform`, `azure`). The `generic` profile automatically excludes environment files (`.env`, `.env.*`), OS metadata (`.DS_Store`, `Thumbs.db`), IDE configs (`.vscode/`, `.idea/`), and VCS metadata (`.git/`). The `azure` profile excludes Azure CLI state (`.azure/`), Azure Functions local settings, Bicep lock files, and sensitive parameter overrides.
   ```bash
   ./bin/gomper list . --profile generic --profile go
+  ./bin/gomper list . --profile generic --profile azure
   ```
 
 - **Ignore Directory (Gitignore Convention)** (`-D`, `--ignore-dir`): Filter out directories matching gitignore conventions (e.g. `bin`, `coverage`, `bin/`, `/build`).
@@ -174,6 +175,7 @@ Display all embedded gitignore language templates:
 #### Output
 ```
 Available ignore profiles:
+  - azure
   - cpp
   - generic
   - go
@@ -198,6 +200,8 @@ Display all recognized file extensions and special filenames:
 ```
 Supported file formats:
   - .bash (bash)
+  - .bicep (bicep)
+  - .bicepparam (bicep)
   - .c (c)
   - .cc (cpp)
   - .cfg (ini)
